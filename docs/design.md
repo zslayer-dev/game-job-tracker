@@ -429,4 +429,6 @@ Edge Function의 형식 검증(4.4-7)도 같은 상한을 써서, 통과한 결�
 | 이메일 공급자 끄기 | Supabase 운영 대시보드 → Auth → Providers | M1, M7·S5에서 재확인 |
 | Security Advisor 경고 0건 확인 | Supabase 운영 대시보드 → Advisors | M7, S5 배포 직전 |
 
+- **Security Advisor 예외**: Leaked Password Protection 경고는 이메일 로그인 미사용(Won't 6)·무료 플랜 미지원으로 예외로 둔다. 비밀번호 로그인이 꺼져 있어 유출 비밀번호 검사 대상이 없다. 이 경고 외의 항목은 0건이어야 한다(#20).
+
 - 공개 저장소가 아니면 Secret scanning·Push protection 사용 가능 여부가 요금제에 따라 다를 수 있다 → M0에서 확인하고, 안 되면 커밋 전 `git grep` 확인으로 대신한다.
