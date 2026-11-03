@@ -21,7 +21,12 @@ export function LoginPage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       // 지금 접속한 주소로 돌아온다 → 배포에서는 배포 주소, 로컬에서는 localhost:5173 (#9)
-      options: { redirectTo: window.location.origin },
+      options: {
+        redirectTo: window.location.origin,
+        // 로그아웃 후 다시 로그인할 때 이전 계정으로 바로 들어가지 않고 매번 계정 선택 화면을 띄운다.
+        // 구글 계정 자체의 로그인 상태는 건드리지 않는다.
+        queryParams: { prompt: 'select_account' },
+      },
     })
     // 성공하면 구글로 이동하므로 여기 남는 건 실패한 경우뿐
     if (error) {
