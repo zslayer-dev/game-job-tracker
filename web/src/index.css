@@ -1,27 +1,71 @@
 :root {
   font-family: system-ui, 'Segoe UI', 'Malgun Gothic', sans-serif;
   color-scheme: light dark;
+  --bg: #ffffff;
+  --text: #1f1f24;
+  --field-bg: #ffffff;
   --muted: #6b6b75;
   --border: #d9d9e0;
+  --surface: #f5f5f8;
+  --accent: #3b5bdb;
   --error: #c0262d;
+  --success: #2b8a3e;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --bg: #16161a;
+    --text: #e8e8ee;
+    --field-bg: #222228;
     --muted: #a6a6b2;
     --border: #3a3a42;
+    --surface: #222228;
+    --accent: #748ffc;
     --error: #ff6b6b;
+    --success: #69db7c;
   }
 }
 
 body {
   margin: 0;
+  background: var(--bg);
+  color: var(--text);
 }
 
-button {
+a {
+  color: var(--accent);
+}
+
+button,
+.button,
+input,
+select,
+textarea {
   font: inherit;
+}
+
+button,
+.button {
+  display: inline-block;
   padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  text-decoration: none;
   cursor: pointer;
+}
+
+button.primary,
+.button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+button.danger {
+  border-color: var(--error);
+  color: var(--error);
 }
 
 button:disabled {
@@ -38,6 +82,15 @@ button:disabled {
   color: var(--error);
 }
 
+.success {
+  color: var(--success);
+}
+
+.banner {
+  margin: 0;
+  padding: 8px 16px;
+}
+
 .login {
   max-width: 360px;
   margin: 15vh auto 0;
@@ -45,6 +98,7 @@ button:disabled {
   text-align: center;
 }
 
+/* 로그인 후 공통 틀 */
 .page main {
   max-width: 960px;
   margin: 0 auto;
@@ -59,10 +113,153 @@ button:disabled {
   border-bottom: 1px solid var(--border);
 }
 
+.topbar button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.topbar .brand {
+  flex-shrink: 0;
+  white-space: nowrap;
+  color: inherit;
+  font-weight: 700;
+  text-decoration: none;
+}
+
 .topbar .account {
   margin-left: auto;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.page-head h1 {
+  overflow-wrap: anywhere;
+}
+
+.back {
+  margin: 0;
+}
+
+.empty {
+  padding: 32px 16px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  text-align: center;
+}
+
+/* 목록 표 */
+.table-wrap {
+  overflow-x: auto;
+}
+
+table.list {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+table.list th,
+table.list td {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+table.list td:nth-child(1),
+table.list td:nth-child(2) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.9em;
+}
+
+/* 추가·편집 폼 */
+.app-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 720px;
+}
+
+.app-form label {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.app-form label > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 600;
+}
+
+/* 배경을 투명으로 두면 드롭다운 목록(브라우저가 그림)이 다크 모드에서 흰 배경·흰 글자가 된다 → 실제 색을 지정 */
+.app-form input,
+.app-form select,
+.app-form textarea {
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background-color: var(--field-bg);
+  color: var(--text);
+}
+
+.app-form option {
+  background-color: var(--field-bg);
+  color: var(--text);
+}
+
+.app-form textarea {
+  resize: vertical;
+  white-space: pre-wrap;
+}
+
+.app-form .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.app-form .row label {
+  min-width: 200px;
+}
+
+.required {
+  color: var(--error);
+  font-size: 0.85em;
+  font-style: normal;
+  font-weight: 400;
+}
+
+.counter {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.9em;
+}
+
+.counter.over {
+  color: var(--error);
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
 }
