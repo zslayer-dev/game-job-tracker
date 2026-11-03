@@ -1,0 +1,12 @@
+{
+  "name": "game-job-tracker",
+  "private": true,
+  "scripts": {
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:status": "supabase status"
+  },
+  "devDependencies": {
+    "supabase": "3.0.0"
+  }
+}

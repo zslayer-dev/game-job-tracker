@@ -1,0 +1,16 @@
+# 비밀값: .env.example만 커밋한다
+.env
+.env.*
+!.env.example
+
+node_modules/
+dist/
+*.log
+
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Claude Code 개인 설정
+.claude/settings.local.json

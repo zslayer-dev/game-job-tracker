@@ -32,5 +32,27 @@
 - 운영 DB에 테스트 계정·데이터를 만들지 않는다. **예외는 배포 주소 검증용 구글 계정 2개**이며, 검증이 끝나면 그 계정들의 테스트 데이터(지원 건·프로필·분석 결과)를 정리한다.
 
 ## 로컬 실행
-<!-- M0 진행 후 채운다: 필요 도구, 설치, supabase start, 환경 변수, 개발 서버, 테스트 실행 명령 -->
-(M0 진행 후 작성)
+필요 도구: Node.js 24 이상, Docker Desktop(실행 중이어야 함). Supabase CLI는 루트 `package.json`에 버전을 고정해 두었으므로 전역 설치 없이 `npx supabase`로 쓴다.
+
+```bash
+# 1. 의존성 설치 (루트: Supabase CLI, web: 앱)
+npm install
+npm install --prefix web
+
+# 2. 로컬 Supabase 스택 시작 (처음엔 Docker 이미지를 받느라 오래 걸림)
+npx supabase start          # 또는 npm run db:start
+
+# 3. 환경 변수: 예시 파일을 복사하고 키를 채운다
+cp web/.env.example web/.env.local
+npx supabase status -o env  # API_URL, ANON_KEY 값을 web/.env.local에 넣는다
+cp supabase/functions/.env.example supabase/functions/.env   # Edge Function 작업(S3)부터
+
+# 4. 개발 서버 → http://localhost:5173 (포트 고정, 사용 중이면 실패)
+npm run dev --prefix web
+```
+
+- 로컬 주소: API `http://127.0.0.1:54321`, Studio `http://127.0.0.1:54323`, DB `postgresql://postgres:postgres@127.0.0.1:54322/postgres`, 메일 확인(Mailpit) `http://127.0.0.1:54324`
+- 중지: `npx supabase stop` (데이터 유지). DB를 마이그레이션부터 다시 만들기: `npx supabase db reset`
+- 빌드·린트 확인: `npm run build --prefix web`, `npm run lint --prefix web`
+- 포트 5173은 Supabase Redirect URLs·Edge Function CORS에 정확히 등록된 주소라 바꾸지 않는다(`web/vite.config.ts`의 `strictPort`).
+- 로컬 Auth 설정(`supabase/config.toml`): `site_url`·`additional_redirect_urls` = `http://localhost:5173`, 이메일 공급자 켬(로컬 테스트 전용).
