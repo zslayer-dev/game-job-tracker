@@ -9,6 +9,7 @@
 
 ## 작업 방식
 - 한 번에 하나만 바꾼다. plan.md의 단계 하나를 진행하고, 끝나면 그 단계의 완료 조건을 확인한 뒤 **멈추고 결과를 보고한다.** 다음 단계는 승인을 받고 시작한다.
+- **사용자에게 실행을 안내하는 명령은 PowerShell(Windows) 기준으로 쓴다.** `cp`·`rm`·`export` 대신 `Copy-Item`·`Remove-Item`·`$env:NAME = "값"`, 경로 구분자는 `\`, 명령 연결은 `;`(PowerShell 5.1은 `&&` 불가).
 - `git reset --hard`, 강제 푸시(`push --force` 등), 이력 변경(rebase, amend, 커밋 삭제)은 승인받기 전엔 하지 않는다.
 
 ## 비밀값
@@ -20,7 +21,7 @@
 2. **Edge Function**: user_id는 검증된 JWT(`auth.getUser`)에서만 얻고 요청 본문의 user_id는 무시한다. JWT 검증은 반드시 한다. 플랫폼 검증(`verify_jwt`)이 현재 키 방식과 호환되지 않으면 함수 안 검증으로 대신한다(S3 착수 시 공식 문서로 확인).
 3. **상한(DB 제약으로도)**: posting_text 8,000자, memo 5,000자, 사용자당 지원 건 500건, 분석 comment 2,000자, matched/missing_skills 각 30개.
 4. **렌더링**: 사용자 입력·AI 출력은 텍스트로만. `dangerouslySetInnerHTML`, 정화하지 않은 마크다운·HTML 렌더링 금지. 프롬프트에서 공고 원문은 구분 태그로 감싼 데이터로 넣는다.
-5. **CORS**: Edge Function은 배포 주소와 `http://localhost:5173`만 허용. Origin이 있고 목록에 없으면 403, Origin 없는 요청은 CORS 헤더 없이 처리하고 인증은 JWT가 담당.
+5. **CORS**: Edge Function 허용 목록은 운영 = `https://game-job-tracker.vercel.app`만, 로컬(`supabase/functions/.env`) = `http://localhost:5173`. 운영에 localhost를 넣지 않는다. Origin이 있고 목록에 없으면 403, Origin 없는 요청은 CORS 헤더 없이 처리하고 인증은 JWT가 담당.
 6. **Redirect URLs**: 와일드카드 없이 정확한 주소만.
 7. **보안 헤더**(`web/vercel.json`): X-Frame-Options DENY, X-Content-Type-Options nosniff, Referrer-Policy strict-origin-when-cross-origin, 기본 CSP.
 8. **오류 노출**: 클라이언트에는 정해진 오류 코드·문구만. 원본 DB·AI 오류는 서버 로그에만, 로그에 JWT·키 금지.
@@ -34,7 +35,7 @@
 ## 로컬 실행
 필요 도구: Node.js 24 이상, Docker Desktop(실행 중이어야 함). Supabase CLI는 루트 `package.json`에 버전을 고정해 두었으므로 전역 설치 없이 `npx supabase`로 쓴다.
 
-```bash
+```powershell
 # 1. 의존성 설치 (루트: Supabase CLI, web: 앱)
 npm install
 npm install --prefix web
@@ -43,9 +44,9 @@ npm install --prefix web
 npx supabase start          # 또는 npm run db:start
 
 # 3. 환경 변수: 예시 파일을 복사하고 키를 채운다
-cp web/.env.example web/.env.local
-npx supabase status -o env  # API_URL, ANON_KEY 값을 web/.env.local에 넣는다
-cp supabase/functions/.env.example supabase/functions/.env   # Edge Function 작업(S3)부터
+Copy-Item web\.env.example web\.env.local
+npx supabase status -o env  # API_URL, ANON_KEY 값을 web\.env.local에 넣는다
+Copy-Item supabase\functions\.env.example supabase\functions\.env   # Edge Function 작업(S3)부터
 
 # 4. 개발 서버 → http://localhost:5173 (포트 고정, 사용 중이면 실패)
 npm run dev --prefix web

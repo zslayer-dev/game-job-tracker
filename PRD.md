@@ -166,7 +166,7 @@
 - 서버 함수의 사용자 식별: AI 분석 서버 함수는 user_id를 검증된 로그인 토큰(JWT)에서만 얻고, 요청 본문에 들어 있는 user_id는 무시한다. 서버 함수의 JWT 검증은 반드시 한다. 플랫폼 검증(verify_jwt)이 현재 키 방식과 호환되지 않으면 함수 안 검증으로 대신한다.
 - 렌더링: AI 출력과 사용자 입력은 텍스트로만 화면에 표시한다. HTML을 직접 주입하는 방식(dangerouslySetInnerHTML)과 정화하지 않은 마크다운·HTML 렌더링은 쓰지 않는다.
 - 프롬프트: AI 프롬프트에서 공고 원문은 지시가 아닌 데이터로 구분해 넣는다. (공고 원문 안의 문장이 AI에게 내리는 명령으로 취급되지 않게)
-- 교차 출처(CORS): AI 분석 서버 함수는 브라우저 요청 중 배포 주소와 `http://localhost:5173`에서 온 요청만 허용한다. Origin 헤더가 있고 허용 목록에 없으면 거부(403)하고, Origin이 없는 요청은 CORS 헤더 없이 처리하며 인증은 JWT가 담당한다.
+- 교차 출처(CORS): AI 분석 서버 함수는 브라우저 요청 중 배포 주소에서 온 요청만 허용한다(로컬 개발 환경에서만 `http://localhost:5173`을 추가로 허용). Origin 헤더가 있고 허용 목록에 없으면 거부(403)하고, Origin이 없는 요청은 CORS 헤더 없이 처리하며 인증은 JWT가 담당한다.
 - 로그인 복귀 주소: 인증 설정의 Redirect URLs에는 와일드카드 없이 정확한 주소만 등록한다.
 - 보안 헤더: 배포 설정에 X-Frame-Options `DENY`, X-Content-Type-Options `nosniff`, Referrer-Policy `strict-origin-when-cross-origin`, 기본 Content-Security-Policy를 넣는다.
 - 오류 노출: 클라이언트에는 정해진 오류 코드와 문구만 보낸다. DB·AI의 원본 오류는 서버 로그에만 남기며, 로그에 JWT와 비밀 키는 남기지 않는다.

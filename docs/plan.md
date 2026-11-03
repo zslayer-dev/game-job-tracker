@@ -9,14 +9,13 @@
 - `.gitignore`에 `.env*`(`.env.example` 제외), **`.gitattributes`에 `* text=auto eol=lf`로 줄바꿈 LF 통일**
 - GitHub 저장소 생성 → Secret scanning·Push protection 켜기(design 7.9)
 - Supabase 프로젝트 생성, Vercel 프로젝트 연결 — **Root Directory를 `web`으로 지정**
-- `web/vercel.json`: SPA 재작성 + 보안 헤더(X-Frame-Options, X-Content-Type-Options, Referrer-Policy, 기본 CSP). `connect-src`의 Supabase 주소는 M1에서 확정
+- `web/vercel.json`: SPA 재작성 + 보안 헤더(X-Frame-Options, X-Content-Type-Options, Referrer-Policy, 기본 CSP). `connect-src`는 운영 Supabase 주소(`https://yykukwakssqwuwfjrnce.supabase.co`)로 확정
 - 완료 조건: 배포 주소에서 빈 화면이 뜨고 응답 헤더에 보안 헤더 4개가 있다. `git ls-files --eol`에서 텍스트 파일이 LF
 - 검증: (선행 작업 — 이후 모든 검증이 배포 주소에서 이뤄짐)
 
 ### M1. 구글 로그인·로그아웃 + OAuth 프로덕션 게시
 - Google OAuth 클라이언트, Supabase Google 공급자, 운영 이메일 공급자 끄기
 - Site URL = 배포 주소, **Redirect URLs는 배포 주소와 `http://localhost:5173` 정확한 주소만**(와일드카드 금지)
-- CSP `connect-src`에 Supabase 프로젝트 주소 확정
 - 로그인 화면, 로그아웃 버튼, 로그인 여부에 따른 라우팅
 - **OAuth 앱을 이 단계에서 바로 "프로덕션"으로 게시** — 막히면 일찍 알아야 시연 영상 대안을 준비할 수 있음
 - 완료 조건: 시크릿 창에서 배포 주소 로그인 → 배포 주소로 복귀, 테스트 사용자 아닌 계정도 로그인, 콘솔에 CSP 위반 없음
@@ -27,6 +26,9 @@
 - **500건 상한 트리거** `enforce_application_limit()` (사용자별 advisory lock `'apps:'||user_id`)
 - 모든 함수 `set search_path = ''` + `public.` 스키마 명시, 실행 권한 최소화
 - RLS 4개 정책, `anon` 권한 회수
+- **`authenticated` 권한을 명시적으로 GRANT**: `grant select, insert, update, delete on public.applications to authenticated;` — 운영 프로젝트는 "새 표 자동 노출"이 꺼져 있어 기본 권한이 붙지 않는다(design 3.0). 빠뜨리면 로컬은 되고 운영만 권한 오류가 난다
+- RLS도 "자동 RLS"(운영)에 기대지 않고 `enable row level security`를 명시
+- 이후 S1·S2 마이그레이션도 같은 규칙: 표·함수마다 `authenticated`(또는 `service_role`) 권한을 명시 GRANT
 - 로컬 스택(이메일 공급자는 `config.toml`에서만 켬) 테스트 스크립트: 두 사용자 교차 조회·수정·삭제, 로그아웃 조회·추가, 빈 회사명, memo 5,001자, 500건 후 추가(+ 동시 2건)
 - 완료 조건: 교차 요청은 0건·DB 불변, 로그아웃은 권한 오류, 빈 값·초과 값은 제약 오류, 500건 초과는 `APP_LIMIT`. 로컬 `supabase db lint` 경고 없음
 - 검증: **#4(DB 쪽), #5, #6, #22(memo·500건 DB 쪽)**, #20 준비
@@ -88,7 +90,7 @@
 - 착수 전: Anthropic 콘솔 월 지출 한도 설정(design 7.9)
 - **착수 시 Supabase 공식 문서로 확인**: 플랫폼 JWT 검증(`verify_jwt`)이 프로젝트의 현재 키 방식과 호환되는지. 호환되면 `verify_jwt = true` 유지, 아니면 끄고 함수 안 검증으로 대신(design 7.2). 결정을 design 7.2에 기록
 - JWT 검증은 어느 방식이든 반드시 수행, user_id는 `auth.getUser(JWT)` 값만 사용, 본문은 `application_id`만 읽음
-- CORS 허용 목록(`ALLOWED_ORIGINS` = 배포 주소, `http://localhost:5173`): Origin이 있고 목록에 없으면 403, Origin 없으면 CORS 헤더 없이 JWT 검증으로 판단
+- CORS 허용 목록(`ALLOWED_ORIGINS`: 운영 secrets = `https://game-job-tracker.vercel.app`만, 로컬 `supabase/functions/.env` = `http://localhost:5173`): Origin이 있고 목록에 없으면 403, Origin 없으면 CORS 헤더 없이 JWT 검증으로 판단
 - JWT 검증 → 지원 건(RLS) → 원문 길이 → 프로필 비어 있음 → `begin_ai_call` → AI 호출(60초) → 형식 검증(DB와 같은 상한) → `finish_ai_call`
 - 프롬프트: 공고 원문·프로필을 구분 태그로 감싸 데이터로 전달, 구조화 출력(design 7.4)
 - 응답은 `{ error: 코드 }`만, 원본 오류는 서버 로그에만(JWT·키·원문은 로그 금지)
