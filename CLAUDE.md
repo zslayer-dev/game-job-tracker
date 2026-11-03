@@ -57,6 +57,9 @@ npm run dev --prefix web
 - 로컬 주소: API `http://127.0.0.1:54321`, Studio `http://127.0.0.1:54323`, DB `postgresql://postgres:postgres@127.0.0.1:54322/postgres`, 메일 확인(Mailpit) `http://127.0.0.1:54324`
 - 중지: `npx supabase stop` (데이터 유지). DB를 마이그레이션부터 다시 만들기: `npx supabase db reset`
 - 빌드·린트 확인: `npm run build --prefix web`, `npm run lint --prefix web`
+- 마이그레이션 로컬 적용: `npx supabase migration up` (기본 대상이 로컬). **운영 반영(`db push`, `--remote`)은 승인받은 뒤에만.**
+- DB 테스트(로컬 스택 전용, 테스트 사용자를 만들고 끝나면 지운다): `npm run test:db`
+- 보안 점검(로컬): `npx supabase db advisors --type security`
 - 포트 5173은 Supabase Redirect URLs·Edge Function CORS에 정확히 등록된 주소라 바꾸지 않는다(`web/vite.config.ts`의 `strictPort`).
 - 로컬 Auth 설정(`supabase/config.toml`): `site_url`·`additional_redirect_urls` = `http://localhost:5173`, 이메일 공급자 켬(로컬 테스트 전용), 구글 공급자 켬(`supabase\.env`의 값 사용).
 - 로컬에서는 브라우저를 반드시 `http://localhost:5173`으로 연다. `127.0.0.1:5173`은 Redirect 허용 목록에 없어 로그인 후 돌아오지 못한다.
