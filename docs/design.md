@@ -299,7 +299,9 @@ POST { application_id }  (Authorization: 사용자 JWT)
 - 배포 주소: **`https://game-job-tracker.vercel.app`** (이하 "배포 주소"는 이 값).
 - **Redirect URLs는 와일드카드 없이 정확한 주소 두 개만**: `https://game-job-tracker.vercel.app`와 `http://localhost:5173`. `https://*.vercel.app` 같은 패턴은 남의 Vercel 앱으로도 토큰이 돌아갈 수 있어 쓰지 않는다. 그 결과 Vercel 미리보기 배포 주소에서는 로그인이 안 되며, 이는 의도된 제약이다.
 - 프런트: `signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } })` — 실행 환경 주소로 돌아오므로 배포에서 localhost로 튕기지 않는다(#9).
-- Vercel: Root Directory `web`, 빌드 명령 `npm run build`, 출력 `dist`. 환경 변수는 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`만.
+- Vercel: Root Directory `web`, 빌드 명령 `npm run build`, 출력 `dist`. 환경 변수는 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`만. `VITE_SUPABASE_ANON_KEY`에는 **publishable key**(`sb_publishable_…`)를 넣는다(운영 Production·로컬 모두, M1 기록). 변수 이름은 그대로 둔다.
+- 프런트 인증 흐름: supabase-js `flowType: 'pkce'`. 구글에서 `?code=`로 돌아오면 라이브러리가 세션으로 교환하고 URL에서 code를 지운다. 첫 세션 확인(`INITIAL_SESSION`)이 끝나기 전에는 보호 화면이 로그인으로 보내지 않고 "불러오는 중"을 보여준다. 로그아웃은 `signOut({ scope: 'local' })`(이 브라우저만).
+- 로컬 구글 로그인: `supabase/config.toml`의 `[auth.external.google]`이 `supabase/.env`(커밋 안 함)에서 `env()`로 클라이언트 ID·secret을 읽는다(CLI 3.0.0에서 동작 확인). 콜백은 `http://127.0.0.1:54321/auth/v1/callback`이며 Google OAuth 클라이언트의 승인된 리디렉션 URI에 있어야 한다.
 - 비밀 값 위치:
   - 브라우저: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (공개돼도 되는 값)
   - Edge Function 비밀: `ANTHROPIC_API_KEY`, 한도 env, `ALLOWED_ORIGINS`, (로컬만) `AI_MOCK`
@@ -401,6 +403,7 @@ Edge Function의 형식 검증(4.4-7)도 같은 상한을 써서, 통과한 결�
 | 코드 | 상황 | 화면 문구(요지) |
 |---|---|---|
 | AUTH_REQUIRED | 로그인 안 됨·토큰 만료 | 다시 로그인해 주세요 |
+| LOGIN_FAILED | 구글 로그인 실패·취소(`?error=`로 복귀) | 로그인에 실패했습니다. 다시 시도해 주세요. |
 | NOT_FOUND | 없는 건 또는 남의 건 | 지원 건을 찾을 수 없습니다 |
 | VALIDATION | CHECK 제약 위반(제약 이름으로 필드 구분) | 회사명·포지션 필수, 공고 원문 8,000자/메모 5,000자 초과 등 |
 | APP_LIMIT | 500건 초과 | 지원 건은 최대 500건까지 저장할 수 있습니다 |

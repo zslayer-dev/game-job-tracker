@@ -1,8 +1,68 @@
 :root {
   font-family: system-ui, 'Segoe UI', 'Malgun Gothic', sans-serif;
   color-scheme: light dark;
+  --muted: #6b6b75;
+  --border: #d9d9e0;
+  --error: #c0262d;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --muted: #a6a6b2;
+    --border: #3a3a42;
+    --error: #ff6b6b;
+  }
 }
 
 body {
   margin: 0;
+}
+
+button {
+  font: inherit;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.status,
+.footnote {
+  color: var(--muted);
+}
+
+.error {
+  color: var(--error);
+}
+
+.login {
+  max-width: 360px;
+  margin: 15vh auto 0;
+  padding: 0 16px;
+  text-align: center;
+}
+
+.page main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar .account {
+  margin-left: auto;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

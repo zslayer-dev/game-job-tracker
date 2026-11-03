@@ -339,6 +339,16 @@ skip_nonce_check = false
 # If enabled, it will allow the user to successfully authenticate when the provider does not return an email address.
 email_optional = false
 
+# 구글 로그인 (로컬). 값은 supabase/.env 에서 읽는다 — 커밋 금지, 예시는 supabase/.env.example.
+# Google OAuth 클라이언트의 승인된 리디렉션 URI에 http://127.0.0.1:54321/auth/v1/callback 이 있어야 한다.
+[auth.external.google]
+enabled = true
+client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
+redirect_uri = "http://127.0.0.1:54321/auth/v1/callback"
+# 리디렉션 방식(signInWithOAuth)에서는 nonce 검사를 건너뛸 필요가 없다.
+skip_nonce_check = false
+
 # Allow Solana wallet holders to sign in to your project via the Sign in with Solana (SIWS) standard.
 # You can configure "web3" rate limit in the [auth.rate_limit] section and set up [auth.captcha] if self-hosting.
 [auth.web3.solana]

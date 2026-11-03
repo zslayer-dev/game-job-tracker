@@ -45,7 +45,9 @@ npx supabase start          # 또는 npm run db:start
 
 # 3. 환경 변수: 예시 파일을 복사하고 키를 채운다
 Copy-Item web\.env.example web\.env.local
-npx supabase status -o env  # API_URL, ANON_KEY 값을 web\.env.local에 넣는다
+npx supabase status -o env  # API_URL, PUBLISHABLE_KEY 값을 web\.env.local에 넣는다
+Copy-Item supabase\.env.example supabase\.env   # 구글 로그인: Google 클라이언트 ID·secret을 직접 채운다
+npx supabase stop; npx supabase start            # supabase\.env를 바꾼 뒤에는 재시작해야 반영된다
 Copy-Item supabase\functions\.env.example supabase\functions\.env   # Edge Function 작업(S3)부터
 
 # 4. 개발 서버 → http://localhost:5173 (포트 고정, 사용 중이면 실패)
@@ -56,4 +58,5 @@ npm run dev --prefix web
 - 중지: `npx supabase stop` (데이터 유지). DB를 마이그레이션부터 다시 만들기: `npx supabase db reset`
 - 빌드·린트 확인: `npm run build --prefix web`, `npm run lint --prefix web`
 - 포트 5173은 Supabase Redirect URLs·Edge Function CORS에 정확히 등록된 주소라 바꾸지 않는다(`web/vite.config.ts`의 `strictPort`).
-- 로컬 Auth 설정(`supabase/config.toml`): `site_url`·`additional_redirect_urls` = `http://localhost:5173`, 이메일 공급자 켬(로컬 테스트 전용).
+- 로컬 Auth 설정(`supabase/config.toml`): `site_url`·`additional_redirect_urls` = `http://localhost:5173`, 이메일 공급자 켬(로컬 테스트 전용), 구글 공급자 켬(`supabase\.env`의 값 사용).
+- 로컬에서는 브라우저를 반드시 `http://localhost:5173`으로 연다. `127.0.0.1:5173`은 Redirect 허용 목록에 없어 로그인 후 돌아오지 못한다.
