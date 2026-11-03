@@ -156,6 +156,13 @@ button:disabled {
   text-align: center;
 }
 
+.empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
 /* 목록 필터·검색 */
 .filters {
   display: flex;

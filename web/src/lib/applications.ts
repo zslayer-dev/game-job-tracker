@@ -69,6 +69,8 @@ function toAppError(error: PostgrestError): AppError {
   }
   if (error.code === '23502') return { code: 'VALIDATION' }
   if (error.code === 'P0001' && error.message === 'APP_LIMIT') return { code: 'APP_LIMIT' }
+  if (error.code === 'P0001' && error.message === 'SAMPLE_NOT_EMPTY') return { code: 'SAMPLE_NOT_EMPTY' }
+  if (error.code === 'P0001' && error.message === 'AUTH_REQUIRED') return { code: 'AUTH_REQUIRED' }
   if (error.code === '42501' || error.code === 'PGRST301' || error.code === 'PGRST303') return { code: 'AUTH_REQUIRED' }
   return { code: 'INTERNAL' }
 }
@@ -118,6 +120,13 @@ export async function updateApplication(id: string, input: ApplicationInput): Pr
   if (error) return { data: null, error: toAppError(error) }
   if (!data) return { data: null, error: { code: 'NOT_FOUND' } }
   return { data: data as Application, error: null }
+}
+
+// 지원 건이 하나도 없을 때만 가상 회사 샘플 6건을 넣는다(DB 함수가 확인과 삽입을 한 번에 처리)
+export async function seedSampleData(): Promise<Result<number>> {
+  const { data, error } = await supabase.rpc('seed_sample_data')
+  if (error) return { data: null, error: toAppError(error) }
+  return { data: data as number, error: null }
 }
 
 export async function deleteApplication(id: string): Promise<Result<true>> {

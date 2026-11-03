@@ -1,6 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { STATUSES, listApplications, parseStatus, type ApplicationListItem, type Status } from '../lib/applications'
+import {
+  STATUSES,
+  listApplications,
+  parseStatus,
+  seedSampleData,
+  type ApplicationListItem,
+  type Status,
+} from '../lib/applications'
 import { errorMessage, type AppError } from '../lib/errors'
 import type { ListLinkState } from '../lib/listLocation'
 import { SEARCH_MAX } from '../lib/search'
@@ -22,8 +29,14 @@ export function ApplicationsPage() {
     setDraft(q)
   }
 
+  // 샘플을 넣은 뒤 목록을 다시 불러올 때 올린다
+  const [reloadCount, setReloadCount] = useState(0)
+  const [seeding, setSeeding] = useState(false)
+  const seedingRef = useRef(false)
+  const [seedError, setSeedError] = useState<AppError | null>(null)
+
   // 결과가 어떤 조건(key)으로 불러온 것인지 함께 둔다. 조건이 바뀌면 새 결과가 올 때까지 "불러오는 중".
-  const key = `${status ?? ''}|${q}`
+  const key = `${status ?? ''}|${q}|${reloadCount}`
   const [result, setResult] = useState<{ key: string; items: ApplicationListItem[] | null; error: AppError | null } | null>(null)
   const loading = result?.key !== key
   const items = result?.items ?? null
@@ -60,12 +73,12 @@ export function ApplicationsPage() {
   useEffect(() => {
     let cancelled = false
     listApplications({ status, q }).then((r) => {
-      if (!cancelled) setResult({ key: `${status ?? ''}|${q}`, items: r.data, error: r.error })
+      if (!cancelled) setResult({ key: `${status ?? ''}|${q}|${reloadCount}`, items: r.data, error: r.error })
     })
     return () => {
       cancelled = true
     }
-  }, [status, q])
+  }, [status, q, reloadCount])
 
   const filtered = status !== null || q.trim() !== ''
   const listState: ListLinkState = { listSearch: searchParams.toString() }
@@ -73,6 +86,20 @@ export function ApplicationsPage() {
   function clearFilters() {
     setDraft('')
     updateParams({ status: null, q: '' }, false)
+  }
+
+  async function fillSamples() {
+    // disabled는 다시 그려진 뒤에야 적용된다. 그 전에 들어온 연속 클릭은 ref로 막는다.
+    if (seedingRef.current) return
+    seedingRef.current = true
+    setSeeding(true)
+    setSeedError(null)
+    const { error: err } = await seedSampleData()
+    seedingRef.current = false
+    setSeeding(false)
+    // SAMPLE_NOT_EMPTY는 다른 탭에서 이미 채운 경우 — 오류 문구와 함께 최신 목록을 보여준다
+    if (err) setSeedError(err)
+    if (!err || err.code === 'SAMPLE_NOT_EMPTY') setReloadCount((n) => n + 1)
   }
 
   return (
@@ -119,6 +146,12 @@ export function ApplicationsPage() {
         </p>
       )}
 
+      {seedError && (
+        <p className="error" role="alert">
+          {errorMessage(seedError)}
+        </p>
+      )}
+
       {!error && items === null && <p className="status">불러오는 중…</p>}
 
       {!error && items?.length === 0 && !loading && (
@@ -133,9 +166,16 @@ export function ApplicationsPage() {
           ) : (
             <>
               <p>첫 지원 건을 추가해 보세요.</p>
-              <Link to="/applications/new" className="button primary">
-                지원 건 추가
-              </Link>
+              <div className="empty-actions">
+                <Link to="/applications/new" className="button primary">
+                  지원 건 추가
+                </Link>
+                {/* 지원 건이 하나도 없을 때만 보인다. 서버도 지원 건이 있으면 거부한다. */}
+                <button type="button" onClick={fillSamples} disabled={seeding}>
+                  {seeding ? '채우는 중…' : '샘플 데이터 채우기'}
+                </button>
+              </div>
+              <p className="footnote">가상 회사의 지원 건 6개를 내 계정에만 넣습니다. 넣은 뒤 자유롭게 수정·삭제할 수 있습니다.</p>
             </>
           )}
         </div>

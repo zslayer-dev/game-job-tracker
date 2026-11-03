@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { ApplicationForm } from '../components/ApplicationForm'
 import { deleteApplication, getApplication, updateApplication, type Application, type ApplicationInput } from '../lib/applications'
@@ -14,6 +14,7 @@ export function ApplicationDetailPage() {
   const [loadError, setLoadError] = useState<AppError | null>(null)
   const [saved, setSaved] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const deletingRef = useRef(false)
   const [deleteError, setDeleteError] = useState<AppError | null>(null)
 
   useEffect(() => {
@@ -38,13 +39,16 @@ export function ApplicationDetailPage() {
   }
 
   async function handleDelete() {
+    if (deletingRef.current) return
     if (!app || !window.confirm(`'${app.company}' 지원 건을 삭제할까요? 되돌릴 수 없습니다.`)) return
+    deletingRef.current = true
     setDeleting(true)
     setDeleteError(null)
     const { error } = await deleteApplication(id)
     if (error) {
       setDeleteError(error)
       setDeleting(false)
+      deletingRef.current = false
       return
     }
     navigate(listPath, { replace: true })

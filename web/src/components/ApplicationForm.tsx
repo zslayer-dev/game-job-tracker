@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import {
   CHANNELS,
   MEMO_MAX,
@@ -71,6 +71,7 @@ export function ApplicationForm({ initial, submitLabel, onSubmit }: Props) {
   const [form, setForm] = useState<FormState>(() => toFormState(initial))
   const [error, setError] = useState<AppError | null>(null)
   const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }))
@@ -78,15 +79,19 @@ export function ApplicationForm({ initial, submitLabel, onSubmit }: Props) {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    // disabled가 그려지기 전 연속 제출(Enter 연타·더블클릭)은 ref로 막는다
+    if (savingRef.current) return
     const input = toInput(form)
     const invalid = validate(input)
     if (invalid) {
       setError(invalid)
       return
     }
+    savingRef.current = true
     setSaving(true)
     setError(null)
     const result = await onSubmit(input)
+    savingRef.current = false
     setSaving(false)
     setError(result)
   }
