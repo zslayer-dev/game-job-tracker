@@ -114,7 +114,10 @@ docs/                        설계·계획
   - 초과 시 `raise exception 'APP_LIMIT'`.
 - 상태 전환 순서 제약 없음(PRD). 트리거로 막지 않는다.
 - 정렬은 쿼리에서 `order('applied_at', {ascending:false, nullsFirst:false}).order('created_at', {ascending:false})`.
-- 회사명 검색은 `ilike '%검색어%'`(데이터가 적어 인덱스 불필요). `%`·`_`는 이스케이프해서 넘긴다. 필터·검색·정렬 모두 DB 쿼리로 처리.
+- 회사명 검색은 PostgREST `imatch`(Postgres `~*`, 대소문자 무시 정규식)에 **정규식 메타문자 `\ . ^ $ * + ? ( ) [ ] { } |`를 모두 이스케이프한 검색어**를 넘겨 글자 그대로 부분 일치시킨다(`web/src/lib/search.ts`, 검색어 최대 100자, 데이터가 적어 인덱스 불필요). 필터·검색·정렬 모두 DB 쿼리로 처리.
+  - `ilike`를 쓰지 않는 이유(M4, 로컬 확인): `%`·`_`·`\`는 이스케이프되지만 PostgREST가 `*`를 `%` 와일드카드로 바꾸고 이를 이스케이프할 방법이 없어, `a*b` 검색이 `axb`·`aXXb`까지 찾는다.
+  - 검증: `tests/m4-search.test.mjs` — 각 메타문자·`%`·`_`·한글·대소문자 섞인 검색어가 글자 그대로만 일치하는지 실제 DB로 확인. 이스케이프를 빼면 39개 중 23개가 실패함을 확인했다.
+  - 필터·검색어는 URL 쿼리(`?status=&q=`)에 담는다. 선택지에 없는 status 값은 "전체"로 본다.
 
 ### profiles (Should)
 | 컬럼 | 타입 / 제약 |

@@ -156,6 +156,46 @@ button:disabled {
   text-align: center;
 }
 
+/* 목록 필터·검색 */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9em;
+  color: var(--muted);
+}
+
+.filters label.grow {
+  flex: 1;
+  min-width: 180px;
+}
+
+.filters select,
+.filters input {
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background-color: var(--field-bg);
+  color: var(--text);
+}
+
+.filters option {
+  background-color: var(--field-bg);
+  color: var(--text);
+}
+
+.table-wrap.stale {
+  opacity: 0.6;
+}
+
 /* 목록 표 */
 .table-wrap {
   overflow-x: auto;

@@ -3,11 +3,13 @@ import { Link, useNavigate, useParams } from 'react-router'
 import { ApplicationForm } from '../components/ApplicationForm'
 import { deleteApplication, getApplication, updateApplication, type Application, type ApplicationInput } from '../lib/applications'
 import { errorMessage, type AppError } from '../lib/errors'
+import { useListPath } from '../lib/listLocation'
 
 // 지원 건 상세·편집·삭제
 export function ApplicationDetailPage() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
+  const listPath = useListPath()
   const [app, setApp] = useState<Application | null>(null)
   const [loadError, setLoadError] = useState<AppError | null>(null)
   const [saved, setSaved] = useState(false)
@@ -45,13 +47,13 @@ export function ApplicationDetailPage() {
       setDeleting(false)
       return
     }
-    navigate('/', { replace: true })
+    navigate(listPath, { replace: true })
   }
 
   return (
     <>
       <p className="back">
-        <Link to="/">← 목록</Link>
+        <Link to={listPath}>← 목록</Link>
       </p>
 
       {loadError && (

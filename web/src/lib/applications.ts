@@ -1,5 +1,6 @@
 import type { PostgrestError } from '@supabase/supabase-js'
 import { logError, type AppError } from './errors'
+import { companySearchPattern } from './search'
 import { supabase } from './supabase'
 
 // DB CHECK 제약과 같은 값 (supabase/migrations/*_applications.sql)
@@ -74,11 +75,23 @@ function toAppError(error: PostgrestError): AppError {
 
 const LIST_COLUMNS = 'id, company, position, status, applied_at, deadline'
 
-export async function listApplications(): Promise<Result<ApplicationListItem[]>> {
-  // 정렬·필터·검색은 M4에서 PRD 규칙대로 바꾼다
-  const { data, error } = await supabase
-    .from('applications')
-    .select(LIST_COLUMNS)
+export type ListFilters = { status: Status | null; q: string }
+
+// URL 쿼리 값 → 상태. 선택지에 없는 값은 "전체"로 본다.
+export function parseStatus(value: string | null): Status | null {
+  return STATUSES.find((s) => s === value) ?? null
+}
+
+// 필터·검색·정렬은 모두 DB 쿼리로 처리한다
+export async function listApplications({ status, q }: ListFilters): Promise<Result<ApplicationListItem[]>> {
+  let query = supabase.from('applications').select(LIST_COLUMNS)
+  if (status) query = query.eq('status', status)
+  const pattern = companySearchPattern(q)
+  if (pattern !== null) query = query.filter('company', 'imatch', pattern)
+
+  // PRD 8장: 지원일 최신순, 빈 지원일은 맨 아래, 그 안에서는 생성 최신순
+  const { data, error } = await query
+    .order('applied_at', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
   if (error) return { data: null, error: toAppError(error) }
   return { data: data as ApplicationListItem[], error: null }
