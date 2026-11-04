@@ -3,6 +3,7 @@
 여러 게임사에 동시에 지원하는 프로그래머가 회사마다 다른 전형 단계와 지원 이력을 한곳에서 추적하는 웹 서비스입니다.
 
 - **배포 주소: https://game-job-tracker.vercel.app**
+- **시연 영상: https://youtu.be/DsNbyke9kxs** (1분 58초)
 - **구글 계정으로 로그인해야 사용할 수 있습니다.** 공유 데모 계정은 없습니다. 처음 로그인하면 빈 화면에서 [샘플 데이터 채우기]로 가상 회사 지원 건 6개를 바로 넣어 볼 수 있습니다.
 - 개인정보처리방침: https://game-job-tracker.vercel.app/privacy.html
 
