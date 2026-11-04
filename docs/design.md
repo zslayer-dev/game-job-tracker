@@ -418,7 +418,7 @@ Edge Function의 형식 검증(4.4-7)도 같은 상한을 써서, 통과한 결�
 | Origin 없음 (curl, 서버 간 호출 등) | CORS 헤더 없이 처리. 거부 여부는 JWT 검증이 정한다 |
 
 - 허용 메서드 `POST, OPTIONS`, 허용 헤더 `authorization, content-type, apikey, x-client-info`. `Vary: Origin`은 모든 응답에 붙인다.
-- **로컬과 운영의 차이(S3 확인)**: 로컬 스택의 Kong은 `/functions/v1/` 경로에 자체 `cors` 플러그인을 붙여 OPTIONS 사전 요청에 직접 200으로 답하고 모든 응답에 `Access-Control-Allow-Origin: *`를 덧붙인다. 운영 게이트웨이는 그러지 않고 함수가 CORS를 처리한다(Supabase 문서 "CORS support for Invoking from the browser"). 그래서 로컬 테스트는 CORS 판단 모듈(`cors.ts`)을 직접 검사하고, 함수를 거치는 요청은 상태 코드(허용 안 된 Origin → 403)로 확인한다. 운영 헤더(사전 요청 204/403, Allow-Origin 값)는 배포 후 S5에서 배포 주소로 확인한다.
+- **로컬과 운영의 차이(S3 확인)**: 로컬 스택의 Kong은 `/functions/v1/` 경로에 자체 `cors` 플러그인을 붙여 OPTIONS 사전 요청에 직접 200으로 답하고 모든 응답에 `Access-Control-Allow-Origin: *`를 덧붙인다. 운영 게이트웨이는 그러지 않고 함수가 CORS를 처리한다(Supabase 문서 "CORS support for Invoking from the browser"). 그래서 로컬 테스트는 CORS 판단 모듈(`cors.ts`)을 직접 검사하고, 함수를 거치는 요청은 상태 코드(허용 안 된 Origin → 403)로 확인한다. 운영 확인(2026-11-04, S4 배포 검증): 배포 주소에서 분석 요청의 사전 요청이 **204**, `Access-Control-Allow-Origin`이 **`https://game-job-tracker.vercel.app`**(`*` 아님)로 왔다 → 운영 게이트웨이는 CORS를 덧붙이지 않고 함수의 판단이 그대로 나간다. 허용 안 된 Origin의 403은 S5 체크리스트에서 운영 주소로 확인한다.
 - CORS는 브라우저용 보호일 뿐 인증이 아니다. Origin 헤더는 브라우저 밖에서는 마음대로 넣거나 뺄 수 있으므로, 실제 방어는 JWT 검증과 한도다. 검증 #5·#21처럼 curl로 직접 요청하는 테스트가 Origin 없이 동작하는 것도 이 규칙 덕분이다.
 
 ### 7.6 Redirect URLs
