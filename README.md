@@ -88,7 +88,7 @@ npx supabase db advisors --type security          # 로컬 보안 점검
 | `tests/m4-search.test.mjs` | 회사명 검색에서 특수문자(`\ . ^ $ * + ? ( ) [ ] { } \| % _`)·한글·대소문자가 글자 그대로 일치 |
 | `tests/m5-seed.test.mjs` | 샘플 동시 요청 시 한 세트만, 다른 계정 격리, 재요청 거부 |
 | `tests/e2e/cross-check.spec.mjs` | 실제 화면에서 추가·상태 유지, 다른 계정의 상세 주소 "찾을 수 없음", 로그아웃 상태 이동, 샘플 버튼 연타 시 6건만 |
-| `tests/prod/cross-check.mjs` | 운영 DB에서 한 트랜잭션 안에 다른 계정 접근·로그아웃·상한·권한을 검사하고 ROLLBACK (`npm run test:prod`, 절차는 m7-checklist.md 6장) |
+| `tests/prod/cross-check.mjs` | 운영 DB에서 한 트랜잭션 안에 다른 계정 접근·로그아웃·상한·권한을 검사하고 ROLLBACK (`npm run test:prod`, 절차는 m7-checklist.md 6장). **미실행(Should 단계 운영 반영 후 회귀 검사용)** — M7 운영 검증은 실제 계정 토큰으로 한 API 검증(#5·#6·#22)으로 대신함 |
 
 배포 주소에서의 검증 절차는 [docs/m7-checklist.md](docs/m7-checklist.md), 결과는 [PRD.md](PRD.md) 10장에 기록합니다.
 

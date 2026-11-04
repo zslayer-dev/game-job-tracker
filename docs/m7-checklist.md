@@ -212,6 +212,8 @@ npm run test:e2e
 
 ### 6-2. 운영 DB 롤백 검사 (`npm run test:prod`)
 
+> **상태: 미실행(Should 단계 운영 반영 후 회귀 검사용).** M7 운영 검증은 실제 계정 토큰으로 한 API 검증(2장, #5·#6·#22, 2026-11-04 통과)으로 대신했다.
+
 `tests/prod/cross-check.mjs`가 운영 DB에 직접 접속해 **하나의 트랜잭션 안에서** 검사하고 마지막에 반드시 `ROLLBACK` 한다(중간에 실패해도 ROLLBACK). 운영 데이터는 바뀌지 않는다.
 
 - 트랜잭션 안에서 임시 사용자 A·B(`prodcheck-…@example.invalid`)와 A의 지원 건을 만들고, `set local role authenticated` + `request.jwt.claims`로 B를 흉내 낸다(PostgREST가 요청마다 하는 것과 같음).
