@@ -185,6 +185,7 @@ docs/                        설계·계획
 | `public.ai_analyses` | `select, insert, delete` |
 | `public.ai_usage` | `select`만 |
 | `seed_sample_data()`, `is_profile_empty()`, `my_ai_remaining()` | `execute` |
+| `counts_for_user()`, `ai_daily_limits()`, `ai_day_start()` | `execute` (표를 읽지 않는 순수 계산, 아래 3.1) |
 | `begin_ai_call()`, `finish_ai_call()` | (`authenticated` 아님) `service_role`에게만 `execute` |
 | `ai_analyses`, `ai_usage` (service_role) | **표 권한 없음.** Edge Function은 표에 직접 쓰지 않고 SECURITY DEFINER 함수만 부른다. 운영은 자동 노출이 꺼져 원래 없고, 로컬 기본 권한도 마이그레이션에서 회수해 같게 만든다(S2, 테스트로 고정) |
 
@@ -206,7 +207,12 @@ docs/                        설계·계획
 - DB 함수 실행 권한: 기본 `PUBLIC` 실행 권한을 회수하고 필요한 역할에만 준다.
   - `seed_sample_data()`, `is_profile_empty()`, `my_ai_remaining()` → `authenticated`만
   - `begin_ai_call()`, `finish_ai_call()` → `service_role`만
-  - 트리거 함수(`set_updated_at`, `enforce_application_limit`, `validate_profile_items`)·`counts_for_user()`·`ai_daily_limits()`·`ai_day_start()` → 직접 호출 권한 없음(내부 사용, service_role 포함)
+  - `counts_for_user()`, `ai_daily_limits()`, `ai_day_start()` → `authenticated`만(anon·service_role 없음)
+    - 이유: INVOKER인 `my_ai_remaining()`이 호출자(authenticated) 권한으로 부르기 때문이다(Postgres는 함수 안에서 부른 함수의 실행 권한도 호출자 기준으로 확인).
+    - 셋 다 **표를 읽지 않는 순수 계산**이라(인자·`now()`·상수만 씀) API로 직접 불러도 알려 주는 정보가 없다. 한도 기본값(10/100)과 KST 자정, 집계 규칙은 PRD에 공개된 내용이다.
+    - 테스트로 고정: 본문에 `FROM`이 없고, 표 권한이 하나도 없는 역할로도 실행된다(표를 읽게 바꾸면 실패함을 확인).
+  - 트리거 함수(`set_updated_at`, `enforce_application_limit`, `validate_profile_items`) → 직접 호출 권한 없음(내부 사용)
+  - **`authenticated`·`anon`이 실행할 수 있는 SECURITY DEFINER 함수는 두지 않는다.** Security Advisor가 "Signed-In Users Can Execute SECURITY DEFINER Function"으로 잡는다(#20). 사용자가 부르는 함수는 INVOKER + RLS로 만들고, DEFINER는 service_role 전용(`begin_ai_call`, `finish_ai_call`)에만 쓴다. 테스트로 고정.
 - **모든 DB 함수 공통 규칙**(PRD 8장 보안):
   - `set search_path = ''`로 고정한다. 특히 `SECURITY DEFINER` 함수는 search_path가 열려 있으면 호출자가 같은 이름의 표·함수를 먼저 찾게 만들어 권한을 가로챌 수 있다.
   - 함수 본문에서 표·함수는 `public.applications`, `public.counts_for_user(...)`처럼 스키마를 붙여 쓴다. `auth.uid()`는 원래 스키마가 붙어 있고, `now()`·`gen_random_uuid()` 같은 기본 함수는 `pg_catalog`라 search_path가 비어도 찾아진다.
@@ -272,8 +278,9 @@ docs/                        설계·계획
 - `begin_ai_call`(서버 판정)과 `my_ai_remaining()`(화면 표시)이 같은 `counts_for_user`·`ai_daily_limits`·`ai_day_start`를 쓰므로 표시와 판정이 어긋나지 않는다(테스트로 고정: 남은 1회면 begin 통과, 0회면 `AI_USER_LIMIT`).
 
 **`public.my_ai_remaining()`** → `{ remaining, daily_limit }`
-- `SECURITY DEFINER`(내부 함수 `counts_for_user`를 부르기 위해), `STABLE`, `search_path = ''`, 실행 권한 `authenticated`만.
-- DEFINER라 RLS를 거치지 않으므로 **오직 `auth.uid()` 기준으로만** 센다. 인자로 사용자를 받지 않는다. `auth.uid()`가 null이면 `AUTH_REQUIRED`.
+- `SECURITY INVOKER`, `STABLE`, `search_path = ''`, 실행 권한 `authenticated`만. 사용자는 `ai_usage` 본인 행을 RLS로 조회할 수 있으므로 호출자 권한으로 센다.
+- `auth.uid()` 기준으로만 센다(RLS + 조건에도 명시). 인자로 사용자를 받지 않는다. `auth.uid()`가 null이면 `AUTH_REQUIRED`.
+- 변경 이력: S2에서는 내부 함수를 부르려고 DEFINER로 만들었으나, 운영 Security Advisor가 "Signed-In Users Can Execute SECURITY DEFINER Function"으로 잡아 INVOKER로 바꾸고 내부 계산 함수 세 개에 `authenticated` 실행 권한을 줬다(마이그레이션 `20261104150000_my_ai_remaining_invoker.sql`).
 - 사용자 한도 기준의 남은 횟수만 돌려준다. 전체 한도 소진은 분석 요청 시 `AI_GLOBAL_LIMIT`로 알린다.
 
 ### 4.3 결과 기록 — DB 함수 `public.finish_ai_call(p_id, p_result, p_reason)`

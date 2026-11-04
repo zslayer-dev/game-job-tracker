@@ -197,7 +197,7 @@ describe('화면 표시(my_ai_remaining)와 판정(begin_ai_call)이 같은 값�
   })
 })
 
-describe('my_ai_remaining(): 본인 사용량만 센다 (SECURITY DEFINER)', () => {
+describe('my_ai_remaining(): 본인 사용량만 센다 (SECURITY INVOKER + RLS)', () => {
   let a
   let b
   before(async () => {
@@ -453,15 +453,67 @@ describe('권한 설정 점검 (운영 "새 표 자동 노출 끔"과 같은 결
     const pick = (f) => ({ definer: f.prosecdef, vol: f.provolatile, anon: f.anon, authenticated: f.authenticated, service_role: f.service_role })
     assert.deepEqual(pick(by.begin_ai_call), { definer: true, vol: 'v', anon: false, authenticated: false, service_role: true })
     assert.deepEqual(pick(by.finish_ai_call), { definer: true, vol: 'v', anon: false, authenticated: false, service_role: true })
-    assert.deepEqual(pick(by.my_ai_remaining), { definer: true, vol: 's', anon: false, authenticated: true, service_role: false })
+    // INVOKER: RLS로 본인 ai_usage만 본다 (Security Advisor "Signed-In Users Can Execute SECURITY DEFINER Function" 해소)
+    assert.deepEqual(pick(by.my_ai_remaining), { definer: false, vol: 's', anon: false, authenticated: true, service_role: false })
+    // 표를 읽지 않는 순수 계산 함수: my_ai_remaining(INVOKER)이 부르므로 authenticated만 실행
     for (const name of ['ai_daily_limits', 'ai_day_start', 'counts_for_user']) {
       assert.deepEqual(
         { anon: by[name].anon, authenticated: by[name].authenticated, service_role: by[name].service_role, definer: by[name].prosecdef },
-        { anon: false, authenticated: false, service_role: false, definer: false },
-        `${name}는 내부용`,
+        { anon: false, authenticated: true, service_role: false, definer: false },
+        name,
       )
     }
     assert.equal(by.counts_for_user.provolatile, 's')
+  })
+
+  test('authenticated가 실행하는 SECURITY DEFINER 함수가 public에 없다 (Security Advisor 0건 조건)', async () => {
+    const rows = await withDb(async (db) =>
+      (
+        await db.query(
+          `select p.proname from pg_proc p
+            where p.pronamespace = 'public'::regnamespace and p.prosecdef
+              and (has_function_privilege('authenticated', p.oid, 'execute') or has_function_privilege('anon', p.oid, 'execute'))`,
+        )
+      ).rows,
+    )
+    assert.deepEqual(rows, [])
+  })
+
+  test('내부 계산 함수 세 개는 표를 읽지 않는다', async () => {
+    const result = await withDb(async (db) => {
+      // 본문에 FROM이 없다 (표·뷰를 읽으려면 FROM이 필요)
+      const src = (
+        await db.query(
+          `select proname, prosrc from pg_proc
+            where pronamespace = 'public'::regnamespace and proname in ('ai_daily_limits', 'ai_day_start', 'counts_for_user')`,
+        )
+      ).rows
+      // 표 권한이 하나도 없는 역할로도 실행된다 (INVOKER라 표를 읽으면 permission denied가 난다)
+      await db.query('begin')
+      try {
+        await db.query('create role s2_no_tables nologin')
+        // postgres는 슈퍼유저가 아니라 만든 역할로 바꾸려면 구성원이 되어야 한다
+        await db.query('grant s2_no_tables to current_user')
+        await db.query('grant usage on schema public to s2_no_tables')
+        await db.query(
+          'grant execute on function public.ai_daily_limits(), public.ai_day_start(), public.counts_for_user(text, text, timestamptz) to s2_no_tables',
+        )
+        await db.query('set local role s2_no_tables')
+        const r = (
+          await db.query(
+            `select (select user_limit from public.ai_daily_limits()) as user_limit,
+                    public.ai_day_start() is not null as day_start,
+                    public.counts_for_user('성공', null, now()) as counts`,
+          )
+        ).rows[0]
+        return { src, r }
+      } finally {
+        await db.query('rollback')
+      }
+    })
+    assert.equal(result.src.length, 3)
+    for (const f of result.src) assert.doesNotMatch(f.prosrc, /\bfrom\b/i, `${f.proname} 본문에 FROM이 있다`)
+    assert.deepEqual(result.r, { user_limit: 10, day_start: true, counts: true })
   })
 
   test('service_role은 표 권한 없이 함수만으로 기록을 남긴다 (운영과 같은 조건)', async () => {
