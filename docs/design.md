@@ -368,11 +368,23 @@ POST { application_id }  (Authorization: 사용자 JWT)
 3장 "모든 DB 함수 공통 규칙"과 같다: `set search_path = ''`, 스키마 명시, 실행 권한 최소화.
 
 ### 7.2 Edge Function의 사용자 식별
-- **JWT 검증은 반드시 한다.** 기본은 플랫폼 검증(`supabase/config.toml`의 `[functions.analyze-posting] verify_jwt = true`, 기본값)을 쓴다.
-- 플랫폼 검증(verify_jwt)이 프로젝트의 현재 키 방식(예: 새 JWT 서명 키·새 API 키 체계)과 호환되지 않으면, `verify_jwt`를 끄고 **함수 안 검증으로 대신한다**: 함수 첫 단계에서 `Authorization` 헤더가 없거나 `auth.getUser(JWT)`(또는 프로젝트 공개 키로 서명·만료·발급자 검증)가 실패하면 401 `AUTH_REQUIRED`로 끝내고 그 뒤 단계를 실행하지 않는다. 어떤 경우에도 "검증 없이 통과"하는 경로는 두지 않는다.
-- 어느 방식을 쓸지는 S3 착수 시 Supabase 공식 문서로 확인하고, 결정과 근거를 이 절에 기록한다.
+- **JWT 검증은 반드시 한다.** 어떤 경우에도 "검증 없이 통과"하는 경로는 두지 않는다.
+- **결정(S3, 2026-11-04, Supabase 공식 문서 확인): 플랫폼 검증을 끄고(`supabase/config.toml` `[functions.analyze-posting] verify_jwt = false`) 함수 안에서 검증한다.**
+  - 근거(문서 "Functions → Authorization headers"): 플랫폼 검증은 레거시 HS256 JWT와 새 비대칭 서명 키 JWT를 모두 검증하지만, **새 API 키(`sb_publishable_`/`sb_secret_`)는 JWT가 아닌데도 `Authorization`·`apikey` 어느 헤더에 있든 통과시킨다.** 문서도 "API 키만 보낸 호출자는 이 검사만으로 인증되지 않는다"고 적는다. 이 프로젝트는 새 API 키를 쓰므로 플랫폼 검증만으로는 사용자 인증이 되지 않는다 → 함수 안 검증이 어차피 필요하다.
+  - 플랫폼 검증을 켜 두면 실패 응답이 정해진 오류 형식(`{ "error": "<코드>" }`, 7.8)이 아니고, 함수의 CORS 판단(허용 안 된 Origin 403, 7.5)보다 먼저 응답한다. 그래서 끄고 한 곳(함수)에서 처리한다.
+  - 함수 안 검증: `Authorization: Bearer <토큰>`이 없거나, 토큰이 API 키(`sb_`로 시작)이거나, `auth.getUser(토큰)`이 실패하면 401 `AUTH_REQUIRED`로 끝내고 그 뒤 단계를 실행하지 않는다. `auth.getUser`는 Auth 서버에 토큰을 확인하므로 서명·만료뿐 아니라 로그아웃으로 끝난 세션도 걸러진다.
+  - 함수 안에서 쓰는 키: `SUPABASE_PUBLISHABLE_KEYS`·`SUPABASE_SECRET_KEYS`(플랫폼이 넣는 JSON, `default` 항목). 없으면 레거시 `SUPABASE_ANON_KEY`·`SUPABASE_SERVICE_ROLE_KEY`.
+  - 테스트(`tests/s3-analyze-posting.test.mjs`): 토큰 없음·API 키·형식이 틀린 토큰·서명이 틀린 토큰 → 401.
 - user_id는 함수 안에서 `auth.getUser(JWT)`가 돌려준 값만 쓴다. 요청 본문은 `application_id`만 읽고, 그 밖의 필드(user_id 포함)는 무시한다(#21).
 - 지원 건 조회는 사용자 JWT로 만든 클라이언트로 해서 RLS가 소유권을 확인하게 한다. service_role 클라이언트는 `begin_ai_call`·`finish_ai_call` 호출에만 쓴다.
+
+**AI 모델과 출력 방식 (S3 결정)**
+- 모델: **`claude-haiku-5-5`**(Claude Haiku 5.5, 현재 Haiku 계열, 입력 $0.10 / 출력 $0.50 per 1M 토큰, 10만 토큰 이하 기준). 공고 원문 8,000자 + 프로필이라 입력이 작고, 분석 하나가 짧아 Haiku로 충분하다고 본다.
+- 호출: 공식 TypeScript SDK `npm:@anthropic-ai/sdk@1.0.0`(버전 고정, API 버전 `2026-10-21`)의 `messages.create`. `timeout: 60000`, `maxRetries: 0`(60초 안에 끝나야 하고 재시도는 비용을 늘린다). `max_tokens: 8000`(Haiku 5.5는 adaptive thinking이 기본으로 켜져 있어 여유를 둔다). 샘플링 파라미터(`temperature` 등)는 보내지 않는다(API 버전 `2026-10-21`에서 400).
+- 구조화 출력: `output_config: { format: { type: 'json_schema', schema } }`. 스키마는 네 필드(`fit_score` 정수, `matched_skills`·`missing_skills` 문자열 배열, `comment` 문자열) + `additionalProperties: false`. 구조화 출력은 숫자 범위·길이·개수 제약을 지원하지 않으므로 그 상한(0~100, 각 30개, 2,000자)은 함수의 형식 검증(4.4-7)이 DB 제약과 같은 값으로 검사한다.
+- `stop_reason`이 `end_turn`이 아니면(거절 `refusal`, 길이 초과 `max_tokens`) 정해진 형식이 아닐 수 있으므로 **실패(형식 오류)**로 기록한다. 공고 원문으로 일부러 유도할 수 있는 결과라 사용자 횟수에 포함한다(PRD 8장 형식 오류 규칙과 같은 이유).
+- 시간 초과: SDK의 `APIConnectionTimeoutError` → 실패(시간 초과) 504. 그 밖의 제공자 오류(`APIError`, 연결 오류) → 실패(AI 오류) 502. 로그에는 제공자 상태 코드와 오류 종류만 남긴다.
+- 테스트용 `AI_MOCK`과 한도 덮어쓰기(`AI_USER_DAILY_LIMIT`·`AI_GLOBAL_DAILY_LIMIT`)는 함수가 **로컬 스택 안에서 돌 때만**(`SUPABASE_URL` 호스트가 `kong`·`localhost`·`127.0.0.1`·`host.docker.internal`) 적용한다. 운영에 실수로 넣어도 무시하고 로그만 남긴다.
 
 ### 7.3 길이·개수 상한
 | 대상 | 상한 | DB에서 막는 방법 |
@@ -406,6 +418,7 @@ Edge Function의 형식 검증(4.4-7)도 같은 상한을 써서, 통과한 결�
 | Origin 없음 (curl, 서버 간 호출 등) | CORS 헤더 없이 처리. 거부 여부는 JWT 검증이 정한다 |
 
 - 허용 메서드 `POST, OPTIONS`, 허용 헤더 `authorization, content-type, apikey, x-client-info`. `Vary: Origin`은 모든 응답에 붙인다.
+- **로컬과 운영의 차이(S3 확인)**: 로컬 스택의 Kong은 `/functions/v1/` 경로에 자체 `cors` 플러그인을 붙여 OPTIONS 사전 요청에 직접 200으로 답하고 모든 응답에 `Access-Control-Allow-Origin: *`를 덧붙인다. 운영 게이트웨이는 그러지 않고 함수가 CORS를 처리한다(Supabase 문서 "CORS support for Invoking from the browser"). 그래서 로컬 테스트는 CORS 판단 모듈(`cors.ts`)을 직접 검사하고, 함수를 거치는 요청은 상태 코드(허용 안 된 Origin → 403)로 확인한다. 운영 헤더(사전 요청 204/403, Allow-Origin 값)는 배포 후 S5에서 배포 주소로 확인한다.
 - CORS는 브라우저용 보호일 뿐 인증이 아니다. Origin 헤더는 브라우저 밖에서는 마음대로 넣거나 뺄 수 있으므로, 실제 방어는 JWT 검증과 한도다. 검증 #5·#21처럼 curl로 직접 요청하는 테스트가 Origin 없이 동작하는 것도 이 규칙 덕분이다.
 
 ### 7.6 Redirect URLs
@@ -444,7 +457,7 @@ Edge Function의 형식 검증(4.4-7)도 같은 상한을 써서, 통과한 결�
 | AI_FORMAT | 형식 오류 | 분석 결과 형식이 올바르지 않습니다 |
 | INTERNAL | 그 밖의 모든 오류 | 잠시 후 다시 시도해 주세요 |
 
-- Edge Function: 응답 본문은 `{ "error": "<코드>" }`만. DB·AI 원본 오류 메시지와 스택은 `console.error`로 서버 로그(Supabase 함수 로그)에만 남긴다.
+- Edge Function: 응답 본문은 `{ "error": "<코드>" }`만. 함수 전용 사용: 허용 안 된 Origin → 403 `FORBIDDEN`, JSON이 아닌 본문·POST 아닌 메서드 → 400/405 `VALIDATION`, 형식이 틀린·없는·남의 `application_id` → 404 `NOT_FOUND`. DB·AI 원본 오류 메시지와 스택은 `console.error`로 서버 로그(Supabase 함수 로그)에만 남긴다.
 - PostgREST 직접 요청(표 CRUD, rpc)의 원본 오류는 Supabase가 응답에 담아 보내므로 막을 수 없다. 대신 프런트는 그 메시지를 **화면에 그대로 띄우지 않고** errcode·제약 이름·예외 코드로 위 표의 문구를 고른다. 원본은 개발 모드에서만 콘솔에 남긴다.
 - 로그에 남기지 않는 것: `Authorization` 헤더·JWT, API 키, service_role 키, 공고 원문·프로필 전문. 남기는 것: 오류 코드, user_id, ai_usage id, 제공자 응답 상태 코드.
 

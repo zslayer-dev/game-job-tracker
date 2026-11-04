@@ -431,3 +431,10 @@ enabled = true
 # formatted with uppercase keywords, indent 2, max width 180, trailing commas,
 # and column/key alignment. Set to "null" to emit raw, unformatted SQL.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":180,\"commaStyle\":\"trailing\"}"
+
+# S3: AI 공고 분석 함수 (design.md 7.2)
+# 플랫폼 JWT 검증은 끄고 함수 안에서 auth.getUser(JWT)로 반드시 검증한다.
+# 이유: 플랫폼 검증은 새 API 키(sb_publishable_/sb_secret_)만 보낸 요청도 핸들러로 통과시켜 인증이 되지 않고,
+# 실패 응답이 정해진 오류 형식({ "error": "<코드>" })이 아니며, 그 전에 CORS(Origin 403) 판단을 할 수 없다.
+[functions.analyze-posting]
+verify_jwt = false

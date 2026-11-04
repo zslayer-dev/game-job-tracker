@@ -19,7 +19,7 @@
 
 ## 보안 규칙 (요약 — 상세는 design.md 7장)
 1. **DB 함수**: 모든 함수에 `set search_path = ''`, 표·함수는 `public.applications`처럼 스키마 명시. 실행 권한은 필요한 역할에만. 잠금 후 개수를 세는 함수·트리거는 VOLATILE(기본값) 유지. `anon` 기본 권한은 `alter default privileges`로 회수.
-2. **Edge Function**: user_id는 검증된 JWT(`auth.getUser`)에서만 얻고 요청 본문의 user_id는 무시한다. JWT 검증은 반드시 한다. 플랫폼 검증(`verify_jwt`)이 현재 키 방식과 호환되지 않으면 함수 안 검증으로 대신한다(S3 착수 시 공식 문서로 확인).
+2. **Edge Function**: user_id는 검증된 JWT(`auth.getUser`)에서만 얻고 요청 본문의 user_id는 무시한다. JWT 검증은 반드시 한다. 플랫폼 검증(`verify_jwt`)은 새 API 키만 보낸 요청도 통과시켜 인증이 되지 않으므로 끄고(`config.toml`) 함수 안에서 검증한다(design.md 7.2, S3에서 확인). `AI_MOCK`·한도 덮어쓰기는 로컬 스택에서만 적용된다.
 3. **상한(DB 제약으로도)**: posting_text 8,000자, memo 5,000자, 사용자당 지원 건 500건, 분석 comment 2,000자, matched/missing_skills 각 30개, 프로필 summary·strengths·gaps 각 2,000자, engines·skills 각 30개(항목 1~50자).
 4. **렌더링**: 사용자 입력·AI 출력은 텍스트로만. `dangerouslySetInnerHTML`, 정화하지 않은 마크다운·HTML 렌더링 금지. 프롬프트에서 공고 원문은 구분 태그로 감싼 데이터로 넣는다.
 5. **CORS**: Edge Function 허용 목록은 운영 = `https://game-job-tracker.vercel.app`만, 로컬(`supabase/functions/.env`) = `http://localhost:5173`. 운영에 localhost를 넣지 않는다. Origin이 있고 목록에 없으면 403, Origin 없는 요청은 CORS 헤더 없이 처리하고 인증은 JWT가 담당.

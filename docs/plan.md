@@ -99,9 +99,10 @@
 - JWT 검증 → 지원 건(RLS) → 원문 길이 → 프로필 비어 있음 → `begin_ai_call` → AI 호출(60초) → 형식 검증(DB와 같은 상한) → `finish_ai_call`
 - 프롬프트: 공고 원문·프로필을 구분 태그로 감싸 데이터로 전달, 구조화 출력(design 7.4)
 - 응답은 `{ error: 코드 }`만, 원본 오류는 서버 로그에만(JWT·키·원문은 로그 금지)
-- AI 키·한도·허용 출처는 `supabase secrets`, `AI_MOCK`은 로컬만
+- AI 키·허용 출처는 `supabase secrets`(한도는 넣지 않음, DB 기본값), `AI_MOCK`·한도 덮어쓰기는 로컬만
 - 착수 시 Claude API 모델 ID·구조화 출력 방식을 공식 문서로 확인
 - 검증: **#12, #15, #18, #19, #21**(서버 쪽)
+- 진행(2026-11-04, 로컬): `supabase/functions/analyze-posting/`(index.ts, cors.ts, analysis.ts), `tests/s3-analyze-posting.test.mjs`(32개, AI_MOCK 모드별로 함수 서버를 다시 띄움). verify_jwt 끔 + 함수 안 `auth.getUser`, 모델 `claude-haiku-5-5` + 구조화 출력(design.md 7.2). 운영 배포·키 설정 전
 
 ### S4. AI 분석 화면
 - 상세 화면에 분석 버튼, 진행 중 표시(중복 클릭 방지), 결과(적합도·매칭·부족·코멘트), 저장 버튼, 최신 저장 결과 표시
