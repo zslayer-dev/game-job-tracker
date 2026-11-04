@@ -35,6 +35,24 @@
 
 ![AI 공고 분석](docs/images/analysis.png)
 
+## 관리자 기능 (Could)
+
+운영자가 가입자와 AI 사용을 관리하는 `/admin` 화면입니다. 관리자 지정은 화면이 아니라 Supabase SQL Editor에서만 합니다(`insert into public.admins (user_id) values ('<사용자 ID>');`).
+
+| 기능 | 설명 |
+|---|---|
+| 유저 목록 | 이메일, 가입일, 마지막 로그인, 지원 건 **개수**, 오늘 AI 사용/한도, AI 허용 여부. 지원 건 내용·메모·프로필·분석 결과는 관리자도 볼 수 없습니다 |
+| AI 권한 | 모드 스위치("전체 허용" 기본 / "허용 목록만")와 사용자별 허용 목록 넣기·빼기. 허용 목록이 비었을 때 "허용 목록만"으로 바꾸려 하면 경고합니다. 관리자도 자동으로 허용되지 않습니다 |
+| 횟수 초기화 | 사용자의 오늘 AI 사용 횟수를 초기화합니다. 호출 기록은 지우지 않고, 서비스 전체 하루 100회 상한은 그대로 셉니다 |
+| 동작 기록 | 허용·해제, 초기화, 모드 변경을 누가 언제 했는지 남깁니다(이메일 없이 사용자 ID만). 기록은 화면·API로 읽거나 고칠 수 없습니다 |
+
+- **화면에서 숨기는 것은 보안이 아닙니다.** 일반 사용자에게는 메뉴가 보이지 않지만, 주소로 들어오거나 API를 직접 불러도 DB 함수가 첫 문장에서 관리자인지 확인해 거부합니다.
+- 개인정보처리방침에 "관리자는 운영을 위해 가입자의 이메일 목록과 사용량을 볼 수 있다"를 적었습니다.
+
+**관리자 화면** (로컬 테스트 계정, 이메일은 가림)
+
+![관리자](docs/images/admin.png)
+
 ## 기술 스택
 
 | 구성 | 선택 | 이유 |
@@ -58,6 +76,7 @@
 - **AI 분석 서버 함수**: 사용자는 검증된 로그인 토큰에서만 식별하고(요청 본문의 user_id는 무시), 허용된 출처(배포 주소)에서 온 브라우저 요청만 받습니다. 공고 원문은 프롬프트에서 데이터로 구분해 넣고, 결과는 형식 검증을 통과해야 보여 줍니다.
 - **상한(화면 + DB 제약)**: 공고 원문 8,000자, 메모 5,000자, 사용자당 지원 건 500건, 프로필 텍스트 각 2,000자·엔진/기술 각 30개, 분석 코멘트 2,000자·기술 목록 각 30개.
 - **화면**: 사용자 입력은 텍스트로만 렌더링(HTML 주입 없음). 오류는 정해진 코드·문구로만 보여 주고 DB 원본 오류는 노출하지 않습니다. 로그인 토큰이 만료되면 로그인 화면으로 안내합니다.
+- **관리자 기능**: `admins` 표는 사용자가 자기 행 조회만 할 수 있어 스스로 관리자가 될 수 없습니다. 관리자 함수 4개만 SECURITY DEFINER이고(가입자 목록은 `auth.users`를 읽어야 함), 모두 본문 첫 문장에서 관리자를 확인합니다. 이 4개 외에 로그인 사용자가 실행하는 DEFINER 함수는 없다는 것을 테스트로 고정했습니다(Security Advisor 예외는 PRD #20).
 - **배포 설정**: CSP·X-Frame-Options 등 보안 헤더, 로그인 복귀 주소는 와일드카드 없이 정확한 주소만, 비밀 키는 브라우저 코드와 저장소에 두지 않음.
 
 자세한 내용: [docs/design.md](docs/design.md) 2~4장(표·권한·원자적 처리), 7장(보안 규칙).
@@ -105,10 +124,12 @@ npx supabase db advisors --type security          # 로컬 보안 점검
 | `tests/s2-ai-quota.test.mjs` | 사용자·전체 한도 동시 요청 1건만 통과, 실패 사유별 집계, 2분 지난 진행 중, KST 자정, 표시와 판정이 같은 값, ai_usage 직접 쓰기 거부, 분석 결과 상한 |
 | `tests/s3-analyze-posting.test.mjs` | Edge Function: CORS·JWT 검증, 남의 건 404, AI 호출 전 거부, 한도, 실패 사유별 집계, 본문 user_id 무시, 키·JWT·원문이 응답·로그에 없음 (AI는 흉내 모드) |
 | `tests/e2e/cross-check.spec.mjs` | 실제 화면에서 추가·상태 유지, 다른 계정의 상세 주소 "찾을 수 없음", 로그아웃 상태 이동, 샘플 버튼 연타 시 6건만, 프로필 저장·격리 |
+| `tests/c1-admin.test.mjs` | 일반 사용자의 관리자 함수 거부·DB 불변, `admins` 자기 행만·자기 추가 불가, 초기화 후 사용자 횟수만 복구·전체 유지, 허용 목록 모드 AI 호출 전 거부, 동작 기록과 수정 불가, DEFINER 노출은 관리자 함수 4개뿐·첫 문장 관리자 확인 |
 | `tests/e2e/analysis.spec.mjs` | AI 분석 → 저장 → 새로고침 유지, 원문 수정 시 버튼 비활성, 오류 문구, 연타 1회, 결과를 텍스트로만 렌더링 (AI는 흉내 모드) |
-| `tests/prod/cross-check.mjs` | 운영 DB에서 한 트랜잭션 안에 다른 계정 접근·로그아웃·상한·권한(Should 표 포함)을 검사하고 ROLLBACK (`npm run test:prod`, 절차는 m7-checklist.md 6장). 운영 첫 실행 2026-11-04: 18개 통과(그때는 applications만), ROLLBACK 완료, 운영 데이터 변경 없음. S5에서 profiles·ai_analyses·ai_usage 검사를 더해 로컬 47개 |
+| `tests/e2e/admin.spec.mjs` | 관리자 화면: 일반 사용자 메뉴 없음·`/admin` 거부, 목록, 빈 허용 목록 경고, 허용 목록 모드 전환·차단 표시, 초기화, 기록 |
+| `tests/prod/cross-check.mjs` | 운영 DB에서 한 트랜잭션 안에 다른 계정 접근·로그아웃·상한·권한(Should 표·관리자 기능 포함)을 검사하고 ROLLBACK (`npm run test:prod`, 절차는 m7-checklist.md 6장). 운영 실행: 2026-11-04 18개(applications만) → S5 48개 통과. C3에서 관리자 검사를 더해 로컬 70개(운영은 71개 예상) |
 
-배포 주소에서의 검증 절차는 [docs/m7-checklist.md](docs/m7-checklist.md)(Must)와 [docs/s5-checklist.md](docs/s5-checklist.md)(Should), 결과는 [PRD.md](PRD.md) 10장에 기록합니다.
+배포 주소에서의 검증 절차는 [docs/m7-checklist.md](docs/m7-checklist.md)(Must), [docs/s5-checklist.md](docs/s5-checklist.md)(Should), [docs/c3-checklist.md](docs/c3-checklist.md)(Could 관리자), 결과는 [PRD.md](PRD.md) 10장에 기록합니다.
 
 ## 알려진 제약
 
@@ -125,4 +146,5 @@ npx supabase db advisors --type security          # 로컬 보안 점검
 | [docs/plan.md](docs/plan.md) | 단계별 작업 목록과 검증 번호 |
 | [docs/m7-checklist.md](docs/m7-checklist.md) | 배포 주소 Must 검증 절차, 운영 DB 롤백 검사 실행 방법 |
 | [docs/s5-checklist.md](docs/s5-checklist.md) | Should 검증: 배포 주소 확인 항목과 로컬 테스트로 대신하는 항목 |
+| [docs/c3-checklist.md](docs/c3-checklist.md) | Could(관리자) 검증: 배포 주소 확인 항목과 로컬 테스트로 대신하는 항목 |
 | [retrospective.md](retrospective.md) | 회고 |

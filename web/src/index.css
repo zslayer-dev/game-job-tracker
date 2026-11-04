@@ -530,6 +530,11 @@ table.list td:nth-child(2) {
 }
 
 /* 관리자 화면 */
+/* 열이 많아 넓은 화면에서는 본문 폭을 넓힌다. 좁은 화면은 표만 가로 스크롤(.table-scroll) */
+.page main:has(.admin-page) {
+  max-width: 1280px;
+}
+
 .admin-section {
   display: flex;
   flex-direction: column;

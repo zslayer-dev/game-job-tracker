@@ -296,6 +296,112 @@ try {
     record('Should 표: A의 프로필·분석·기록이 그대로', ok, ok ? '' : JSON.stringify(r))
   }
 
+  // ── 관리자 기능 (Could C1~C3, #24 #27): 일반 사용자 거부, admins 자기 행만, admin_actions 접근 불가
+  // 트랜잭션 안에서만 A를 관리자로 만든다(ROLLBACK). 관리자의 쓰기 함수는 부르지 않는다:
+  // 전역 잠금('ai_quota')을 잡아 이 검사가 끝날 때까지 운영의 분석 요청을 기다리게 만들기 때문.
+  const hasAdmin = (await db.query("select to_regprocedure('public.admin_list_users()') is not null as ok")).rows[0].ok
+  if (!hasAdmin) {
+    record('관리자 기능: 아직 운영에 없음(C1 반영 전) — 검사 건너뜀', true)
+  } else {
+    await db.query('insert into public.admins (user_id) values ($1)', [userA])
+    const snapshot = async () =>
+      (
+        await db.query(
+          `select (select access_mode from public.ai_settings) as mode,
+                  (select count(*)::int from public.ai_allowlist) as allow,
+                  (select count(*)::int from public.ai_quota_resets) as resets,
+                  (select count(*)::int from public.admin_actions) as actions,
+                  (select count(*)::int from public.admins) as admins`,
+        )
+      ).rows[0]
+    const before = await snapshot()
+
+    {
+      const r = await inSavepoint(async () => {
+        await actAs(userB)
+        return (await db.query('select public.is_admin() as v')).rows[0].v
+      })
+      record('#24 is_admin(): 일반 사용자 B는 false', !r.error && r.value === false, r.error ? `오류 ${r.error.code}` : `값 ${r.value}`)
+      const a = await inSavepoint(async () => {
+        await actAs(userA)
+        return (await db.query('select public.is_admin() as v')).rows[0].v
+      })
+      record('#24 is_admin(): 관리자 A는 true', !a.error && a.value === true, a.error ? `오류 ${a.error.code}` : `값 ${a.value}`)
+    }
+    for (const [name, stmt, params] of [
+      ['admin_list_users', 'select * from public.admin_list_users()', []],
+      ['admin_set_ai_access_mode', "select public.admin_set_ai_access_mode('allowlist')", []],
+      ['admin_set_ai_allowed', 'select public.admin_set_ai_allowed($1, true)', [userB]],
+      ['admin_reset_ai_quota', 'select public.admin_reset_ai_quota($1)', [userB]],
+    ]) {
+      const r = await inSavepoint(async () => {
+        await actAs(userB)
+        await db.query(stmt, params)
+      })
+      const ok = Boolean(r.error) && r.error.code === 'P0001' && r.error.message === 'FORBIDDEN'
+      record(`#24 일반 사용자 B의 ${name} → FORBIDDEN`, ok, r.error ? `${r.error.code} ${r.error.message}` : '거부되지 않음')
+    }
+    for (const fn of ['is_admin()', 'admin_list_users()']) {
+      expectDenied(`#24 anon의 ${fn} 실행`, await inSavepoint(async () => {
+        await actAs(null)
+        await db.query(`select * from public.${fn}`)
+      }), '42501')
+    }
+    expectRows('#24 admins: 일반 사용자 B 조회 0건(A의 행 안 보임)', await inSavepoint(async () => {
+      await actAs(userB)
+      return (await db.query('select user_id from public.admins')).rowCount
+    }), 0)
+    {
+      const r = await inSavepoint(async () => {
+        await actAs(userA)
+        return (await db.query('select user_id from public.admins')).rows.map((x) => x.user_id)
+      })
+      const ok = !r.error && r.value.length === 1 && r.value[0] === userA
+      record('#24 admins: 관리자 A도 자기 행만 보인다', ok, r.error ? `오류 ${r.error.code}` : `${r.value.length}건`)
+    }
+    expectDenied('#24 admins: B가 자기 자신을 관리자로 추가', await inSavepoint(async () => {
+      await actAs(userB)
+      await db.query('insert into public.admins (user_id) values ($1)', [userB])
+    }), '42501')
+    expectDenied('#24 admins: 관리자 A도 화면·API로 삭제 불가', await inSavepoint(async () => {
+      await actAs(userA)
+      await db.query('delete from public.admins where user_id = $1', [userA])
+    }), '42501')
+    expectDenied('#24 ai_settings: B가 모드 직접 변경', await inSavepoint(async () => {
+      await actAs(userB)
+      await db.query("update public.ai_settings set access_mode = 'allowlist'")
+    }), '42501')
+    expectDenied('#24 ai_allowlist: B가 자기 자신 추가', await inSavepoint(async () => {
+      await actAs(userB)
+      await db.query('insert into public.ai_allowlist (user_id, granted_by) values ($1, $1)', [userB])
+    }), '42501')
+    for (const [who, uid] of [['관리자 A', userA], ['B', userB]]) {
+      expectDenied(`#27 admin_actions: ${who} 조회 불가`, await inSavepoint(async () => {
+        await actAs(uid)
+        await db.query('select id from public.admin_actions limit 1')
+      }), '42501')
+      expectDenied(`#27 admin_actions: ${who} 직접 추가 불가`, await inSavepoint(async () => {
+        await actAs(uid)
+        await db.query("insert into public.admin_actions (actor_id, action, target_user_id) values ($1, 'quota_reset', $1)", [uid])
+      }), '42501')
+    }
+    {
+      // 관리자 A는 목록을 읽을 수 있다(값은 출력하지 않는다)
+      const r = await inSavepoint(async () => {
+        await actAs(userA)
+        const res = await db.query('select * from public.admin_list_users()')
+        return { n: res.rowCount, cols: res.fields.map((f) => f.name).sort().join(',') }
+      })
+      const want = 'ai_allowed,ai_allowlisted,ai_daily_limit,ai_used_today,application_count,created_at,email,last_sign_in_at,user_id'
+      record('관리자 A의 admin_list_users: 정해진 열만', !r.error && r.value.cols === want, r.error ? `오류 ${r.error.code}` : `${r.value.n}명, 열 ${r.value.cols}`)
+    }
+    {
+      const after = await snapshot()
+      const same = JSON.stringify({ ...after, admins: after.admins }) === JSON.stringify(before)
+      record('#24 거부된 호출 뒤 관리자 표·기록 그대로', same, same ? '' : `${JSON.stringify(before)} → ${JSON.stringify(after)}`)
+    }
+  }
+
   // ── 권한 점검
   {
     const { rows: g } = await db.query(
@@ -387,6 +493,38 @@ try {
         x ? `definer=${x.prosecdef} service_role=${x.service} authenticated=${x.authed} anon=${x.anon}` : '함수 없음',
       )
     }
+  }
+  if (hasAdmin) {
+    // 관리자 표: RLS 켜짐, authenticated는 select만(admin_actions는 없음), anon·PUBLIC·service_role 없음
+    const { rows: g } = await db.query(
+      `select table_name, grantee, string_agg(privilege_type, ',' order by privilege_type) as privs
+         from information_schema.role_table_grants
+        where table_schema = 'public'
+          and table_name in ('admins','ai_settings','ai_allowlist','ai_quota_resets','admin_actions')
+          and grantee in ('anon','authenticated','service_role','PUBLIC')
+        group by table_name, grantee order by table_name, grantee`,
+    )
+    const got = g.map((x) => `${x.table_name}/${x.grantee}:${x.privs}`).join(' ')
+    const want = 'admins/authenticated:SELECT ai_allowlist/authenticated:SELECT ai_quota_resets/authenticated:SELECT ai_settings/authenticated:SELECT'
+    record('권한: 관리자 표 5개는 authenticated select만(admin_actions 없음)', got === want, `실제 ${got || '없음'}`)
+
+    const { rows: f } = await db.query(
+      `select p.proname, p.prosecdef, p.prosrc from pg_catalog.pg_proc p
+         join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and p.proname in ('is_admin','admin_list_users','admin_set_ai_access_mode','admin_set_ai_allowed','admin_reset_ai_quota')`,
+    )
+    const isAdmin = f.find((x) => x.proname === 'is_admin')
+    record('함수: is_admin은 SECURITY INVOKER', Boolean(isAdmin && !isAdmin.prosecdef), isAdmin ? `definer=${isAdmin.prosecdef}` : '함수 없음')
+    const firstLine = /^\s*if not public\.is_admin\(\) then\s+raise exception 'FORBIDDEN' using errcode = 'P0001';\s+end if;/
+    const bad = f
+      .filter((x) => x.proname !== 'is_admin')
+      .filter((x) => {
+        const m = /^([\s\S]*?)\bbegin\b([\s\S]*)$/i.exec(x.prosrc)
+        return !m || m[1].includes(':=') || !firstLine.test(m[2])
+      })
+      .map((x) => x.proname)
+    record('함수: 관리자 함수 4개는 본문 첫 문장이 관리자 확인', f.length === 5 && bad.length === 0, bad.length ? `어긋남 ${bad.join(', ')}` : '')
   }
 } catch (error) {
   record('실행 중 오류', false, redact(`${error.code ?? ''} ${error.message ?? error}`.trim()))

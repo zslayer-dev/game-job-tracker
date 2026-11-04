@@ -76,7 +76,8 @@ export function AdminPage() {
   const allowlistCount = users?.filter((u) => u.ai_allowlisted).length ?? 0
 
   return (
-    <>
+    // admin-page: 열이 많아 넓은 화면에서는 본문 폭을 넓힌다(index.css)
+    <div className="admin-page">
       <div className="page-head">
         <h1>관리자</h1>
       </div>
@@ -165,6 +166,6 @@ export function AdminPage() {
           </section>
         </>
       )}
-    </>
+    </div>
   )
 }
