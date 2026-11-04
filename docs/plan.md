@@ -122,6 +122,7 @@
   - profiles·ai_analyses·ai_usage: B가 A의 행을 조회·수정·삭제하면 0건, A 소유로 추가 거부(ai_usage는 사용자 쓰기 자체가 권한 오류), 소유자 변경 거부, anon 조회·추가 권한 오류
   - 권한 점검: 세 표의 GRANT(ai_usage는 select만, service_role 표 권한 없음)·RLS·정책, 함수 실행 권한(begin/finish는 service_role만, authenticated가 실행하는 DEFINER 함수 없음)
   - 실행은 사용자가 한다(트랜잭션 + ROLLBACK, m7-checklist.md 6-2)
+- 진행(2026-11-04): 체크리스트 `docs/s5-checklist.md`(배포 주소 확인 / 로컬 테스트로 대신 구분), `tests/prod/cross-check.mjs`에 Should 표 교차 검증·권한 점검 추가(로컬 47개, 운영 예상 48개), README Should "구현 완료" + `docs/images/analysis.png`. 운영 CORS 403·배포 번들 키 검색은 체크리스트 명령으로 사전 확인. 배포 주소 검증 결과 대기
 - PRD 10장 결과 갱신, README 보완
 - 검증: **#11~#23 전체** (우선순위상 #19가 최하위 — 시간이 없으면 마지막에 남김)
 

@@ -1,4 +1,4 @@
-// 운영 DB 교차 검증 (npm run test:prod) — PRD #5, #6, #22(memo), 권한 점검.
+// 운영 DB 교차 검증 (npm run test:prod) — PRD #5, #6, #17, #22(memo·분석 결과), Should 표(profiles·ai_analyses·ai_usage) 교차 검증, 권한 점검.
 // 전부 하나의 트랜잭션 안에서 실행하고 마지막에 반드시 ROLLBACK 한다. 운영 데이터는 바뀌지 않는다.
 //
 // 입력(환경 변수로만 받는다. 값은 파일·로그·출력에 남기지 않는다):
@@ -169,6 +169,133 @@ try {
     return (await db.query("insert into public.applications (company, position, memo) values ('상한', 'x', repeat('가', 5000))")).rowCount
   }), 1)
 
+  // ── Should 표 교차 검증 (S5): profiles · ai_analyses · ai_usage
+  // A의 프로필·분석 결과·호출 기록을 트랜잭션 안에서만 만든다(마지막에 ROLLBACK).
+  await db.query(`insert into public.profiles (user_id, summary, skills) values ($1, '원래 요약', '{C#}')`, [userA])
+  const { rows: ana } = await db.query(
+    `insert into public.ai_analyses (application_id, user_id, fit_score, matched_skills, missing_skills, comment)
+     values ($1, $2, 70, '{C#}', '{GAS}', '원래 코멘트') returning id`,
+    [appId, userA],
+  )
+  const analysisId = ana[0].id
+  const { rows: use } = await db.query(`insert into public.ai_usage (user_id, result) values ($1, '성공') returning id`, [userA])
+  const usageId = use[0].id
+
+  // profiles (본인만 조회·추가·수정·삭제)
+  expectRows('profiles: B가 A의 프로필 조회', await inSavepoint(async () => {
+    await actAs(userB)
+    return (await db.query('select user_id from public.profiles where user_id = $1', [userA])).rowCount
+  }), 0)
+  expectRows('profiles: B가 A의 프로필 수정', await inSavepoint(async () => {
+    await actAs(userB)
+    return (await db.query("update public.profiles set summary = 'B가 바꿈' where user_id = $1", [userA])).rowCount
+  }), 0)
+  expectRows('profiles: B가 A의 프로필 삭제', await inSavepoint(async () => {
+    await actAs(userB)
+    return (await db.query('delete from public.profiles where user_id = $1', [userA])).rowCount
+  }), 0)
+  expectDenied('profiles: B가 A 소유로 추가', await inSavepoint(async () => {
+    await actAs(userB)
+    await db.query("insert into public.profiles (user_id, summary) values ($1, 'B가 넣음')", [userA])
+  }), '42501')
+  expectDenied('profiles: A가 자기 프로필의 소유자를 B로 변경', await inSavepoint(async () => {
+    await actAs(userA)
+    await db.query('update public.profiles set user_id = $2 where user_id = $1', [userA, userB])
+  }), '42501')
+  expectDenied('profiles: anon 조회', await inSavepoint(async () => {
+    await actAs(null)
+    await db.query('select user_id from public.profiles limit 1')
+  }), '42501')
+  expectDenied('profiles: 엔진 31개 거부', await inSavepoint(async () => {
+    await actAs(userA)
+    await db.query("update public.profiles set engines = array(select 'e' || g from generate_series(1, 31) g) where user_id = $1", [userA])
+  }), '23514', 'profiles_engines_count')
+
+  // ai_analyses (본인만 조회·추가·삭제, 수정 없음, 복합 FK)
+  expectRows('ai_analyses: B가 A의 분석 조회', await inSavepoint(async () => {
+    await actAs(userB)
+    return (await db.query('select id from public.ai_analyses where id = $1', [analysisId])).rowCount
+  }), 0)
+  expectRows('ai_analyses: B가 A의 분석 삭제', await inSavepoint(async () => {
+    await actAs(userB)
+    return (await db.query('delete from public.ai_analyses where id = $1', [analysisId])).rowCount
+  }), 0)
+  expectDenied('ai_analyses: 수정은 누구도 못 함(A 본인도)', await inSavepoint(async () => {
+    await actAs(userA)
+    await db.query('update public.ai_analyses set fit_score = 100 where id = $1', [analysisId])
+  }), '42501')
+  expectDenied('ai_analyses: B가 A 소유로 A의 지원 건에 추가', await inSavepoint(async () => {
+    await actAs(userB)
+    await db.query(
+      "insert into public.ai_analyses (application_id, user_id, fit_score, comment) values ($1, $2, 1, 'B가 넣음')",
+      [appId, userA],
+    )
+  }), '42501')
+  expectDenied('ai_analyses: B가 자기 이름으로 A의 지원 건에 붙임(복합 FK)', await inSavepoint(async () => {
+    await actAs(userB)
+    await db.query("insert into public.ai_analyses (application_id, fit_score, comment) values ($1, 1, 'B가 붙임')", [appId])
+  }), '23503')
+  expectDenied('ai_analyses: anon 조회', await inSavepoint(async () => {
+    await actAs(null)
+    await db.query('select id from public.ai_analyses limit 1')
+  }), '42501')
+  expectDenied('#22 ai_analyses: 코멘트 2,001자 거부', await inSavepoint(async () => {
+    await actAs(userA)
+    await db.query("insert into public.ai_analyses (application_id, fit_score, comment) values ($1, 1, repeat('가', 2001))", [appId])
+  }), '23514', 'ai_analyses_comment_len')
+  expectDenied('#22 ai_analyses: 매칭 기술 31개 거부', await inSavepoint(async () => {
+    await actAs(userA)
+    await db.query(
+      "insert into public.ai_analyses (application_id, fit_score, matched_skills, comment) values ($1, 1, array(select 's' || g from generate_series(1, 31) g), 'x')",
+      [appId],
+    )
+  }), '23514', 'ai_analyses_matched_skills_count')
+
+  // ai_usage (#17: 본인 조회만, 직접 쓰기 거부)
+  expectRows('#17 ai_usage: A는 자기 기록 조회', await inSavepoint(async () => {
+    await actAs(userA)
+    return (await db.query('select id from public.ai_usage where id = $1', [usageId])).rowCount
+  }), 1)
+  expectRows('#17 ai_usage: B가 A의 기록 조회', await inSavepoint(async () => {
+    await actAs(userB)
+    return (await db.query('select id from public.ai_usage where id = $1', [usageId])).rowCount
+  }), 0)
+  expectDenied('#17 ai_usage: 사용자가 직접 추가', await inSavepoint(async () => {
+    await actAs(userA)
+    await db.query("insert into public.ai_usage (user_id, result, failure_reason) values ($1, '실패', 'AI 오류')", [userA])
+  }), '42501')
+  expectDenied('#17 ai_usage: 사용자가 직접 수정', await inSavepoint(async () => {
+    await actAs(userA)
+    await db.query("update public.ai_usage set result = '실패', failure_reason = 'AI 오류' where id = $1", [usageId])
+  }), '42501')
+  expectDenied('#17 ai_usage: 사용자가 직접 삭제', await inSavepoint(async () => {
+    await actAs(userA)
+    await db.query('delete from public.ai_usage where id = $1', [usageId])
+  }), '42501')
+  expectDenied('#17 ai_usage: 사용자가 begin_ai_call 호출', await inSavepoint(async () => {
+    await actAs(userA)
+    await db.query('select public.begin_ai_call($1, 1000000, 1000000)', [userA])
+  }), '42501')
+  {
+    const r = await inSavepoint(async () => {
+      await actAs(userB)
+      return (await db.query('select remaining, daily_limit from public.my_ai_remaining()')).rows[0]
+    })
+    const ok = !r.error && r.value.remaining === r.value.daily_limit
+    record('my_ai_remaining: B에게 A의 사용량이 섞이지 않음', ok, r.error ? `오류 ${r.error.code}` : `B remaining=${r.value.remaining}/${r.value.daily_limit}`)
+  }
+  {
+    const after = await db.query(
+      `select (select summary from public.profiles where user_id = $1) as summary,
+              (select fit_score from public.ai_analyses where id = $2) as score,
+              (select result from public.ai_usage where id = $3) as result`,
+      [userA, analysisId, usageId],
+    )
+    const r = after.rows[0]
+    const ok = r.summary === '원래 요약' && r.score === 70 && r.result === '성공'
+    record('Should 표: A의 프로필·분석·기록이 그대로', ok, ok ? '' : JSON.stringify(r))
+  }
+
   // ── 권한 점검
   {
     const { rows: g } = await db.query(
@@ -213,6 +340,45 @@ try {
     record('함수 권한: seed_sample_data는 authenticated만 실행', Boolean(seed && seed.authed && !seed.anon), seed ? `anon=${seed.anon} authenticated=${seed.authed}` : '함수 없음')
     const auto = e.find((x) => x.fn.startsWith('rls_auto_enable'))
     if (auto) record('함수 권한: rls_auto_enable 실행 권한 회수', !auto.anon && !auto.authed, `anon=${auto.anon} authenticated=${auto.authed}`)
+  }
+  {
+    // Should 표 권한: profiles 4개, ai_analyses 조회·추가·삭제, ai_usage 조회만. anon·PUBLIC·service_role은 AI 표 권한 없음
+    const { rows: g } = await db.query(
+      `select table_name, grantee, string_agg(privilege_type, ',' order by privilege_type) as privs
+         from information_schema.role_table_grants
+        where table_schema = 'public' and table_name in ('profiles', 'ai_analyses', 'ai_usage')
+          and grantee in ('authenticated', 'anon', 'PUBLIC', 'service_role')
+        group by table_name, grantee`,
+    )
+    const get = (t, r) => g.find((x) => x.table_name === t && x.grantee === r)?.privs ?? '없음'
+    const want = { profiles: 'DELETE,INSERT,SELECT,UPDATE', ai_analyses: 'DELETE,INSERT,SELECT', ai_usage: 'SELECT' }
+    for (const [t, privs] of Object.entries(want)) {
+      record(`권한: ${t} authenticated = ${privs}`, get(t, 'authenticated') === privs, `실제 ${get(t, 'authenticated')}`)
+    }
+    const extra = g.filter(
+      (x) => x.grantee === 'anon' || x.grantee === 'PUBLIC' || (x.grantee === 'service_role' && x.table_name !== 'profiles'),
+    )
+    record('권한: Should 표에 anon·PUBLIC 권한 없음, AI 표에 service_role 권한 없음', extra.length === 0, extra.map((x) => `${x.table_name}/${x.grantee}:${x.privs}`).join(' '))
+  }
+  {
+    const { rows: f } = await db.query(
+      `select p.proname, p.prosecdef,
+              has_function_privilege('anon', p.oid, 'execute') as anon,
+              has_function_privilege('authenticated', p.oid, 'execute') as authed,
+              has_function_privilege('service_role', p.oid, 'execute') as service
+         from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'`,
+    )
+    const exposedDefiner = f.filter((x) => x.prosecdef && (x.anon || x.authed)).map((x) => x.proname)
+    record('함수 권한: anon·authenticated가 실행하는 SECURITY DEFINER 함수 없음', exposedDefiner.length === 0, exposedDefiner.join(', '))
+    for (const name of ['begin_ai_call', 'finish_ai_call']) {
+      const x = f.find((y) => y.proname === name)
+      record(
+        `함수 권한: ${name}는 service_role만(DEFINER)`,
+        Boolean(x && x.prosecdef && x.service && !x.authed && !x.anon),
+        x ? `definer=${x.prosecdef} service_role=${x.service} authenticated=${x.authed} anon=${x.anon}` : '함수 없음',
+      )
+    }
   }
 } catch (error) {
   record('실행 중 오류', false, redact(`${error.code ?? ''} ${error.message ?? error}`.trim()))

@@ -95,7 +95,13 @@ function mockOutcome(mode: string): AiOutcome | null {
   switch (mode) {
     case 'ok':
       return parseAndValidate(
-        JSON.stringify({ fit_score: 72, matched_skills: ['C#', 'Unity'], missing_skills: ['GAS'], comment: '흉내 낸 분석 결과입니다.' }),
+        JSON.stringify({
+          fit_score: 72,
+          matched_skills: ['C#', 'Unity'],
+          missing_skills: ['GAS'],
+          comment:
+            '(로컬 흉내 결과) Unity와 C# 경험이 공고의 필수 요건과 맞습니다.\nGAS는 우대 사항이므로 개인 프로젝트에서 쓴 경험을 포트폴리오에 구체적으로 적어 두면 좋습니다.',
+        }),
       )
     case 'ai_error':
       return { kind: 'ai_error' }

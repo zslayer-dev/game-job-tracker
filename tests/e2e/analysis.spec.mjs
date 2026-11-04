@@ -61,7 +61,7 @@ test('분석 → 결과 표시 → 저장 → 새로고침 후에도 저장된 �
   const fresh = page.getByTestId('analysis-new')
   await expect(fresh).toBeVisible()
   await expect(fresh).toContainText('적합도 72 / 100')
-  await expect(fresh).toContainText('흉내 낸 분석 결과입니다.')
+  await expect(fresh).toContainText('(로컬 흉내 결과) Unity와 C# 경험이')
   await expect(fresh.getByRole('listitem')).toHaveText(['C#', 'Unity', 'GAS'])
   await expect(page.getByText('오늘 남은 분석 9 / 10회')).toBeVisible()
   expect(calls).toHaveLength(1)
@@ -79,7 +79,7 @@ test('분석 → 결과 표시 → 저장 → 새로고침 후에도 저장된 �
   await page.reload()
   const savedBox = page.getByTestId('analysis-saved')
   await expect(savedBox).toContainText('적합도 72 / 100')
-  await expect(savedBox).toContainText('흉내 낸 분석 결과입니다.')
+  await expect(savedBox).toContainText('(로컬 흉내 결과) Unity와 C# 경험이')
   await expect(page.getByText('오늘 남은 분석 9 / 10회')).toBeVisible()
 })
 
