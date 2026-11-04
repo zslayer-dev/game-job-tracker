@@ -117,6 +117,10 @@
 - 배포 주소(구글 계정 두 개): #11, #12 문구, #17, #21, #22, #23
 - 저장소 `git grep` + 배포 번들 검색(#18)
 - 운영 이메일 공급자 꺼짐 재확인, **Security Advisor 경고 0건 재확인**(#20)
+- 운영 DB 롤백 검사(`tests/prod/cross-check.mjs`, `npm run test:prod`)에 Should 표 교차 검증 추가 — 지금은 applications만 본다(2026-11-04 운영 첫 실행 18개 통과)
+  - profiles·ai_analyses·ai_usage: B가 A의 행을 조회·수정·삭제하면 0건, A 소유로 추가 거부(ai_usage는 사용자 쓰기 자체가 권한 오류), 소유자 변경 거부, anon 조회·추가 권한 오류
+  - 권한 점검: 세 표의 GRANT(ai_usage는 select만, service_role 표 권한 없음)·RLS·정책, 함수 실행 권한(begin/finish는 service_role만, authenticated가 실행하는 DEFINER 함수 없음)
+  - 실행은 사용자가 한다(트랜잭션 + ROLLBACK, m7-checklist.md 6-2)
 - PRD 10장 결과 갱신, README 보완
 - 검증: **#11~#23 전체** (우선순위상 #19가 최하위 — 시간이 없으면 마지막에 남김)
 
