@@ -3,6 +3,8 @@
 대상: PRD 10장 #24~#27, #20(Could 반영 후 Security Advisor).
 이미 통과(2026-11-04, 배포 주소): **#24 화면**(관리자 메뉴는 관리자에게만, 일반 계정 `/admin` → "권한이 없습니다"), **#26**(허용 목록 모드에서 목록 밖 B 차단·상세 화면 안내·버튼 비활성).
 
+> **C3 운영 검증 완료(2026-11-04)**: 1단계 `test:prod` 78개 통과(관리자 초기화 전역 잠금 122ms, ROLLBACK 완료·운영 데이터 변경 없음), 2단계 advisors 판정 통과(예외 5건, 참고 1건, 문제 0건). 운영 AI 모드는 "전체 허용". PRD 10장 #20·#24·#25·#27에 기록했다.
+
 남은 확인은 **두 단계**로 끝난다. 둘 다 PowerShell 창 하나에서 하고, 운영 데이터를 바꾸지 않는다.
 
 | 단계 | 명령 | 확인하는 것 |
@@ -54,7 +56,7 @@ function Test-Advisors([string]$Json) {
   $isException = {
     param($r)
     ($r.name -eq 'authenticated_security_definer_function_executable' -and $adminFns -contains $r.metadata.name) -or
-    ($r.name -like '*leaked_password*') -or ($r.title -like '*Leaked Password*')
+    ($r.name -eq 'auth_leaked_password_protection')
   }
   foreach ($r in $results) {
     $tag = if (& $isException $r) { '예외' } elseif ($r.level -eq 'INFO') { '참고' } else { '문제' }
@@ -75,11 +77,12 @@ Test-Advisors $json
 | 결과 항목 | 판정 |
 |---|---|
 | `authenticated_security_definer_function_executable`(0029) + 함수 이름이 관리자 함수 4개 중 하나 | 예외 (PRD #20 비고) |
-| 이름에 `leaked_password`가 들어가거나 제목이 "Leaked Password …" | 예외 (PRD #20 비고) |
+| `auth_leaked_password_protection` (이름 정확히 일치) | 예외 (PRD #20 비고) |
 | `rls_enabled_no_policy` — `admin_actions` (INFO) | 참고: 의도된 설계(정책 없이 RLS만 켬 → 사용자는 읽기·쓰기 불가, 관리자 함수만 기록). INFO는 경고가 아니다 |
 | 그 밖의 WARN·ERROR (예: 관리자 함수가 아닌 함수의 DEFINER 노출, `function_search_path_mutable`) | **실패** |
 
-- 관리자 함수 4개의 경고 이름(0029)은 Supabase 린터 문서로 확인했다. Leaked Password 경고는 정확한 이름을 문서로 확인하지 못해 이름·제목 둘 다로 넓게 맞춘다. 이 경고가 CLI 결과에 아예 없을 수도 있다(인증 설정 점검이라 DB 린터가 아닐 수 있음) — 그래도 통과다. 대시보드에서는 보인다.
+- 관리자 함수 4개의 경고 이름(0029)은 Supabase 린터 문서로, Leaked Password 경고 이름 `auth_leaked_password_protection`은 운영 CLI 결과(2026-11-04)로 확인했다. 예외는 두 이름과 **정확히 일치**할 때만 인정한다(비슷한 이름의 다른 경고를 놓치지 않게). Leaked Password 경고가 결과에 없어도 통과다.
+- **운영 결과(2026-11-04)**: 예외 5건(관리자 함수 4개 + `auth_leaked_password_protection`), 참고 1건(`admin_actions` INFO), 문제 0건 → 통과.
 - **로컬 확인(2026-11-04)**: 판정 함수를 표본 JSON으로 시험했다 — 예외만 있으면 통과, `function_search_path_mutable`이 섞이면 실패, 관리자 함수가 아닌 함수(`seed_sample_data`)의 DEFINER 경고면 실패. 로컬 DB(`--remote` 없이)는 `admin_actions` INFO 1건만 나와 통과. 단, 로컬 점검은 DEFINER 노출 경고(0029)를 내지 않으므로 이 부분은 운영에서만 확인된다.
 
 ---

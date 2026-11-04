@@ -155,7 +155,7 @@
 - 운영 Security Advisor: 관리자 함수 4개 경고만 남는지(#20 예외)
 - PRD 10장 #24~#27, #20 갱신, README 보완
 - 검증: **#24~#27**, #20
-- 진행(2026-11-04): #24 화면·#26 배포 주소 통과 기록. 체크리스트 `docs/c3-checklist.md`(콘솔 fetch, #24 API·#25·#27 배포 확인 / 로컬로 대신 구분, 기대 상태 코드는 로컬 REST로 확인), `tests/prod/cross-check.mjs`에 관리자 검사 추가 + #25·#27(ROLLBACK 직전에 관리자 초기화 1회, 잠금 유지 시간 출력, 로컬 77개·운영 78개 예상), #20 CLI 판정(`db advisors --remote` + 예외 필터, c3-checklist 2단계), 관리자 화면 넓은 화면 폭 1280px, README 관리자 기능 + `docs/images/admin.png`. #25·#27 배포 주소 결과 대기
+- 진행(2026-11-04): #24 화면·#26 배포 주소 통과 기록. 체크리스트 `docs/c3-checklist.md`(콘솔 fetch, #24 API·#25·#27 배포 확인 / 로컬로 대신 구분, 기대 상태 코드는 로컬 REST로 확인), `tests/prod/cross-check.mjs`에 관리자 검사 추가 + #25·#27(ROLLBACK 직전에 관리자 초기화 1회, 잠금 유지 시간 출력, 로컬 77개·운영 78개 예상), #20 CLI 판정(`db advisors --remote` + 예외 필터, c3-checklist 2단계), 관리자 화면 넓은 화면 폭 1280px, README 관리자 기능 + `docs/images/admin.png`. 운영 검증 완료(2026-11-04): test:prod 78개 통과(잠금 122ms), advisors 예외 5건·참고 1건·문제 0건, #20·#24·#25·#26·#27 기록. 운영 AI 모드 "전체 허용"
 
 ---
 
