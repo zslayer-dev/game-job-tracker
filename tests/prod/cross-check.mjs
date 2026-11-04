@@ -369,8 +369,16 @@ try {
          from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
         where n.nspname = 'public'`,
     )
+    // 관리자 함수 4개(C1)만 예외(PRD #20). C1을 운영에 올리기 전에는 0개, 올린 뒤에는 4개.
+    const ADMIN_DEFINERS = ['admin_list_users', 'admin_reset_ai_quota', 'admin_set_ai_access_mode', 'admin_set_ai_allowed']
     const exposedDefiner = f.filter((x) => x.prosecdef && (x.anon || x.authed)).map((x) => x.proname)
-    record('함수 권한: anon·authenticated가 실행하는 SECURITY DEFINER 함수 없음', exposedDefiner.length === 0, exposedDefiner.join(', '))
+    const unexpected = exposedDefiner.filter((n) => !ADMIN_DEFINERS.includes(n))
+    const anonDefiner = f.filter((x) => x.prosecdef && x.anon).map((x) => x.proname)
+    record(
+      '함수 권한: anon·authenticated가 실행하는 SECURITY DEFINER 함수는 관리자 함수 4개 외 없음, anon은 없음',
+      unexpected.length === 0 && anonDefiner.length === 0,
+      `노출 ${exposedDefiner.join(', ') || '없음'}${unexpected.length ? ` / 예외 밖 ${unexpected.join(', ')}` : ''}`,
+    )
     for (const name of ['begin_ai_call', 'finish_ai_call']) {
       const x = f.find((y) => y.proname === name)
       record(

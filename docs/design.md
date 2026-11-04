@@ -208,6 +208,7 @@ docs/                        설계·계획
 | (Could) `public.admins` | `select`만 (RLS: 본인 행) — `is_admin()`(INVOKER)이 읽는다 |
 | (Could) `public.admin_actions` | **없음** |
 | (Could) `is_admin()` | `execute` (SECURITY INVOKER — admins 본인 행만 읽음) |
+| (Could) `ai_user_allowed(uuid)`, `ai_user_quota_start(uuid)` | `execute` (SECURITY INVOKER 판정 보조 함수 — RLS 때문에 남의 허용·초기화 행은 보이지 않아, 남의 ID를 넣어도 "모드 기준 허용 여부"·"오늘 시작 시각"만 나온다) |
 | (Could) `admin_list_users()`, `admin_set_ai_access_mode()`, `admin_set_ai_allowed()`, `admin_reset_ai_quota()` | `execute` (SECURITY DEFINER, 첫 문장에서 관리자 확인 — 4.5, Security Advisor 예외 #20) |
 | `ai_analyses`, `ai_usage` (service_role) | **표 권한 없음.** Edge Function은 표에 직접 쓰지 않고 SECURITY DEFINER 함수만 부른다. 운영은 자동 노출이 꺼져 원래 없고, 로컬 기본 권한도 마이그레이션에서 회수해 같게 만든다(S2, 테스트로 고정) |
 
@@ -365,6 +366,8 @@ end if;
 | `admin_set_ai_allowed(p_user_id uuid, p_allowed boolean)` | 대상이 `auth.users`에 없으면 `NOT_FOUND`. 허용이면 `ai_allowlist` 추가, 해제면 삭제. 실제로 바뀐 경우에만 `admin_actions('ai_allow' / 'ai_disallow')` | VOLATILE, `ai_quota` 잠금 |
 | `admin_reset_ai_quota(p_user_id uuid)` | 대상 확인 후 `ai_quota_resets` 한 줄 + `admin_actions('quota_reset')`. `ai_usage`는 지우지 않는다 | VOLATILE, `ai_quota` 잠금 |
 
+- **판정 보조 함수(C1 구현 시 추가)**: `ai_user_allowed(p_user_id)`(모드 'all'이면 true, 'allowlist'면 목록에 있을 때만), `ai_user_quota_start(p_user_id)`(오늘 시작과 오늘 마지막 초기화 중 늦은 시각). 둘 다 SECURITY INVOKER·STABLE. `begin_ai_call`·`admin_list_users`(DEFINER, 소유자 권한으로 모든 행)와 `my_ai_remaining`(INVOKER, RLS로 본인 행)이 같은 정의를 써서 판정·표시·관리자 목록이 어긋나지 않는다.
+- 관리자 함수 4개는 선언부에 초기값을 두지 않는다(관리자 확인보다 먼저 실행되는 코드가 없게). 테스트가 본문 첫 문장과 선언부를 카탈로그(`pg_proc.prosrc`)로 확인한다.
 - 쓰기 함수 세 개는 `begin_ai_call`과 같은 전역 잠금(`'ai_quota'`)을 잡는다 → 권한 변경·초기화가 진행 중인 한도 판정 사이에 끼지 않고, 판정 앞이나 뒤에 온전히 적용된다.
 - 변경과 기록(`admin_actions`)은 같은 트랜잭션이라 기록 없이 바뀌는 일이 없다(#27).
 - "허용 목록만"으로 바꿔도 관리자 자신이 자동으로 허용되지는 않는다. 화면은 허용 목록이 비어 있을 때 모드를 바꾸려 하면 경고한다.

@@ -113,7 +113,7 @@ describe('#15 실패 사유별 집계', () => {
 
   test('사용자 횟수: AI 오류·시간 초과는 빠지고, 형식 오류·성공만 센다 (2회)', async () => {
     const r = await remaining(u)
-    assert.deepEqual(r, { remaining: 8, daily_limit: 10 })
+    assert.deepEqual(r, { remaining: 8, daily_limit: 10, allowed: true })
     // 한도 3이면 1회 더 되고, 그다음은 막힌다
     assert.equal((await begin(u.id, 3)).error, null)
     assert.equal((await begin(u.id, 3)).error?.message, 'AI_USER_LIMIT')
@@ -188,10 +188,10 @@ describe('화면 표시(my_ai_remaining)와 판정(begin_ai_call)이 같은 값�
     await insertUsage(u.id, '실패', '시간 초과')
     await insertUsage(u.id, '진행 중', null, "now() - interval '5 minutes'")
 
-    assert.deepEqual(await remaining(u), { remaining: 1, daily_limit: 10 })
+    assert.deepEqual(await remaining(u), { remaining: 1, daily_limit: 10, allowed: true })
     const first = await admin.rpc('begin_ai_call', { p_user_id: u.id })
     assert.equal(first.error, null)
-    assert.deepEqual(await remaining(u), { remaining: 0, daily_limit: 10 })
+    assert.deepEqual(await remaining(u), { remaining: 0, daily_limit: 10, allowed: true })
     const second = await admin.rpc('begin_ai_call', { p_user_id: u.id })
     assert.equal(second.error?.message, 'AI_USER_LIMIT')
   })
@@ -466,17 +466,24 @@ describe('권한 설정 점검 (운영 "새 표 자동 노출 끔"과 같은 결
     assert.equal(by.counts_for_user.provolatile, 's')
   })
 
-  test('authenticated가 실행하는 SECURITY DEFINER 함수가 public에 없다 (Security Advisor 0건 조건)', async () => {
+  test('authenticated가 실행하는 SECURITY DEFINER 함수는 관리자 함수 4개뿐, anon은 없음 (Security Advisor 예외 #20)', async () => {
     const rows = await withDb(async (db) =>
       (
         await db.query(
-          `select p.proname from pg_proc p
+          `select p.proname,
+                  has_function_privilege('anon', p.oid, 'execute') as anon
+             from pg_proc p
             where p.pronamespace = 'public'::regnamespace and p.prosecdef
-              and (has_function_privilege('authenticated', p.oid, 'execute') or has_function_privilege('anon', p.oid, 'execute'))`,
+              and (has_function_privilege('authenticated', p.oid, 'execute') or has_function_privilege('anon', p.oid, 'execute'))
+            order by p.proname`,
         )
       ).rows,
     )
-    assert.deepEqual(rows, [])
+    assert.deepEqual(
+      rows.map((r) => r.proname),
+      ['admin_list_users', 'admin_reset_ai_quota', 'admin_set_ai_access_mode', 'admin_set_ai_allowed'],
+    )
+    assert.ok(rows.every((r) => !r.anon), 'anon은 관리자 함수도 실행할 수 없다')
   })
 
   test('내부 계산 함수 세 개는 표를 읽지 않는다', async () => {

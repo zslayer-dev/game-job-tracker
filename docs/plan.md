@@ -138,6 +138,7 @@
 - 기존 테스트 갱신: "authenticated가 실행하는 DEFINER 함수 없음" → "관리자 함수 4개 외 없음"(`tests/s2-ai-quota.test.mjs`, `tests/prod/cross-check.mjs`). CLAUDE.md 보안 규칙 1의 예외 목록(4개)은 설계 단계에서 이미 반영
 - SQL 수준 테스트(로컬): 일반 사용자의 관리자 함수 4개 호출 FORBIDDEN·DB 불변·기록 없음, `is_admin()` false, anon 거부, `admins`에서 일반 사용자 자기 행 0건·다른 사람 행 조회 불가·자기 자신 insert 거부(#24), `admin_actions` 직접 접근 거부, `is_admin` INVOKER 확인, 함수 본문 첫 문장 확인(카탈로그), 초기화 후 사용자 횟수만 복구·전체 유지·ai_usage 불변, 허용 목록 모드 미허용 → `AI_NOT_ALLOWED` + 기록 없음, 허용 후 통과, 동작 기록의 actor·시각, 표시(`my_ai_remaining`)와 판정이 같은 값
 - 검증: **#24, #25, #26, #27**의 DB 쪽, #20 예외 조건
+- 진행(2026-11-04, 로컬): 마이그레이션 `20261104180000_admin.sql`(판정 보조 함수 `ai_user_allowed`·`ai_user_quota_start` 추가, `my_ai_remaining`은 `allowed` 열 때문에 drop 후 재생성), `tests/c1-admin.test.mjs`(20개, 관리자 확인·초기화·허용 판정을 빼면 7개 실패 확인), `tests/s2-ai-quota.test.mjs`·`tests/prod/cross-check.mjs`의 DEFINER 점검을 "관리자 함수 4개뿐"으로 갱신. 운영 반영 전. Edge Function의 `AI_NOT_ALLOWED` 응답 코드는 C2
 
 ### C2. Edge Function·관리자 화면·개인정보처리방침
 - Edge Function: `AI_NOT_ALLOWED` → 403 `{ error }` (AI 호출 전), 테스트 추가
