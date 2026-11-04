@@ -305,6 +305,7 @@ POST { application_id }  (Authorization: 사용자 JWT)
 - 프런트: `signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } })` — 실행 환경 주소로 돌아오므로 배포에서 localhost로 튕기지 않는다(#9).
 - Vercel: Root Directory `web`, 빌드 명령 `npm run build`, 출력 `dist`. 환경 변수는 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`만. `VITE_SUPABASE_ANON_KEY`에는 **publishable key**(`sb_publishable_…`)를 넣는다(운영 Production·로컬 모두, M1 기록). 변수 이름은 그대로 둔다.
 - 프런트 인증 흐름: supabase-js `flowType: 'pkce'`. 구글에서 `?code=`로 돌아오면 라이브러리가 세션으로 교환하고 URL에서 code를 지운다. 첫 세션 확인(`INITIAL_SESSION`)이 끝나기 전에는 보호 화면이 로그인으로 보내지 않고 "불러오는 중"을 보여준다. 로그아웃은 `signOut({ scope: 'local' })`(이 브라우저만).
+- 토큰 만료 처리(M6): API가 `AUTH_REQUIRED`(401 `PGRST301`/`PGRST303`)를 돌려주면 `lib/authEvents`로 알리고 AuthProvider가 `signOut({ scope: 'local' })` → 로그인 화면. 사용자가 누르지 않은 `SIGNED_OUT`(토큰 거부, refresh 실패)이면 로그인 화면에 "다시 로그인해 주세요."를 보여주고, 직접 로그아웃이면 보여주지 않는다. access token만 만료된 경우는 supabase-js가 refresh token으로 조용히 갱신한다(로컬 확인). `42501`은 로그아웃시키지 않고 `FORBIDDEN`으로 표시한다. 로그아웃 상태(세션 없음)는 요청 전에 RequireAuth가 로그인 화면으로 보낸다(#6 화면 쪽).
 - 로컬 구글 로그인: `supabase/config.toml`의 `[auth.external.google]`이 `supabase/.env`(커밋 안 함)에서 `env()`로 클라이언트 ID·secret을 읽는다(CLI 3.0.0에서 동작 확인). 콜백은 `http://127.0.0.1:54321/auth/v1/callback`이며 Google OAuth 클라이언트의 승인된 리디렉션 URI에 있어야 한다.
 - 비밀 값 위치:
   - 브라우저: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (공개돼도 되는 값)
@@ -406,7 +407,8 @@ Edge Function의 형식 검증(4.4-7)도 같은 상한을 써서, 통과한 결�
 
 | 코드 | 상황 | 화면 문구(요지) |
 |---|---|---|
-| AUTH_REQUIRED | 로그인 안 됨·토큰 만료 | 다시 로그인해 주세요 |
+| AUTH_REQUIRED | 토큰 무효·만료(401 `PGRST301`/`PGRST303`) | 다시 로그인해 주세요 (세션을 정리하고 로그인 화면으로 보낸 뒤 그 화면에 표시) |
+| FORBIDDEN | 로그인한 상태에서 권한 거부(`42501`, RLS·GRANT 설정 문제) | 이 작업을 할 권한이 없습니다 (세션은 유지 — 로그아웃시키면 원인이 가려진다) |
 | LOGIN_FAILED | 구글 로그인 실패·취소(`?error=`로 복귀) | 로그인에 실패했습니다. 다시 시도해 주세요. |
 | NOT_FOUND | 없는 건 또는 남의 건 | 지원 건을 찾을 수 없습니다 |
 | VALIDATION | CHECK 제약 위반(제약 이름으로 필드 구분) | 회사명·포지션 필수, 공고 원문 8,000자/메모 5,000자 초과 등 |

@@ -195,18 +195,21 @@ export function ApplicationsPage() {
             </thead>
             <tbody>
               {items.map((app) => (
+                // data-label: 모바일 폭에서 표 대신 카드로 보일 때 칸 이름으로 쓴다(index.css)
                 <tr key={app.id}>
-                  <td>
+                  <td data-label="회사" className="cell-company">
                     <Link to={`/applications/${app.id}`} state={listState}>
                       {app.company}
                     </Link>
                   </td>
-                  <td>{app.position}</td>
-                  <td>
+                  <td data-label="포지션" className="cell-position">
+                    {app.position}
+                  </td>
+                  <td data-label="상태">
                     <span className="badge">{app.status}</span>
                   </td>
-                  <td>{app.applied_at ?? '—'}</td>
-                  <td>{app.deadline ?? '—'}</td>
+                  <td data-label="지원일">{app.applied_at ?? '—'}</td>
+                  <td data-label="마감일">{app.deadline ?? '—'}</td>
                 </tr>
               ))}
             </tbody>

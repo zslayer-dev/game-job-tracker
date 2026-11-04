@@ -145,6 +145,13 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+/* 긴 제목 옆에서도 버튼이 찌그러지거나 글자가 꺾이지 않게 */
+.page-head button,
+.page-head .button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .back {
   margin: 0;
 }
@@ -225,6 +232,57 @@ table.list td:nth-child(1),
 table.list td:nth-child(2) {
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* 모바일 폭: 표를 카드 목록으로 바꾼다(회사·포지션 한 줄씩, 상태·지원일·마감일은 칸 이름과 함께) */
+@media (max-width: 600px) {
+  table.list thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  table.list,
+  table.list tbody,
+  table.list tr,
+  table.list td {
+    display: block;
+  }
+
+  table.list tr {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  table.list td {
+    padding: 0;
+    border: none;
+    white-space: normal;
+  }
+
+  table.list td.cell-company,
+  table.list td.cell-position {
+    flex-basis: 100%;
+  }
+
+  table.list td.cell-company {
+    font-weight: 600;
+  }
+
+  table.list td.cell-position {
+    color: var(--muted);
+  }
+
+  table.list td:not(.cell-company):not(.cell-position)::before {
+    content: attr(data-label) ' ';
+    color: var(--muted);
+    font-size: 0.85em;
+  }
 }
 
 .badge {

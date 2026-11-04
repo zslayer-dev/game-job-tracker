@@ -1,4 +1,5 @@
 import type { PostgrestError } from '@supabase/supabase-js'
+import { reportAuthRequired } from './authEvents'
 import { logError, type AppError } from './errors'
 import { companySearchPattern } from './search'
 import { supabase } from './supabase'
@@ -70,8 +71,19 @@ function toAppError(error: PostgrestError): AppError {
   if (error.code === '23502') return { code: 'VALIDATION' }
   if (error.code === 'P0001' && error.message === 'APP_LIMIT') return { code: 'APP_LIMIT' }
   if (error.code === 'P0001' && error.message === 'SAMPLE_NOT_EMPTY') return { code: 'SAMPLE_NOT_EMPTY' }
-  if (error.code === 'P0001' && error.message === 'AUTH_REQUIRED') return { code: 'AUTH_REQUIRED' }
-  if (error.code === '42501' || error.code === 'PGRST301' || error.code === 'PGRST303') return { code: 'AUTH_REQUIRED' }
+  if (error.code === 'P0001' && error.message === 'AUTH_REQUIRED') {
+    reportAuthRequired()
+    return { code: 'AUTH_REQUIRED' }
+  }
+  if (error.code === 'PGRST301' || error.code === 'PGRST303') {
+    // 토큰 무효·만료: 세션을 정리하고 로그인 화면으로 보낸다(AuthProvider)
+    reportAuthRequired()
+    return { code: 'AUTH_REQUIRED' }
+  }
+  // 로그인한 상태의 42501은 토큰 문제가 아니라 권한 설정(RLS·GRANT) 문제다.
+  // 로그아웃시키면 원인이 가려지므로 세션은 그대로 두고 문구만 보여준다.
+  // (로그아웃 상태의 요청은 세션이 없어 RequireAuth가 먼저 로그인 화면으로 보낸다)
+  if (error.code === '42501') return { code: 'FORBIDDEN' }
   return { code: 'INTERNAL' }
 }
 

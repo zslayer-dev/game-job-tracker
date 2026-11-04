@@ -1,6 +1,7 @@
 // 화면에 보여주는 오류 문구는 여기서만 정한다(design.md 7.8). 원본 오류 메시지는 화면에 띄우지 않는다.
 export type ErrorCode =
   | 'AUTH_REQUIRED'
+  | 'FORBIDDEN'
   | 'LOGIN_FAILED'
   | 'NOT_FOUND'
   | 'VALIDATION'
@@ -15,6 +16,7 @@ export type AppError = { code: ErrorCode; field?: ValidationField }
 
 const MESSAGES: Record<ErrorCode, string> = {
   AUTH_REQUIRED: '다시 로그인해 주세요.',
+  FORBIDDEN: '이 작업을 할 권한이 없습니다.',
   LOGIN_FAILED: '로그인에 실패했습니다. 다시 시도해 주세요.',
   NOT_FOUND: '지원 건을 찾을 수 없습니다.',
   VALIDATION: '입력값을 확인해 주세요.',

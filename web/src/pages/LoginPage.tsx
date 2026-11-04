@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Navigate, useLocation } from 'react-router'
 import { useAuth } from '../auth/useAuth'
 import type { LoginRedirectState } from '../auth/RequireAuth'
@@ -6,16 +6,20 @@ import { errorMessage, logError } from '../lib/errors'
 import { supabase } from '../lib/supabase'
 
 export function LoginPage() {
-  const { session, loading } = useAuth()
+  const { session, loading, expired } = useAuth()
   const location = useLocation()
   const redirectState = location.state as LoginRedirectState | null
   const [pending, setPending] = useState(false)
+  const pendingRef = useRef(false)
   const [failed, setFailed] = useState(redirectState?.loginFailed ?? false)
 
   if (loading) return <p className="status">불러오는 중…</p>
   if (session) return <Navigate to="/" replace />
 
   async function signIn() {
+    // disabled가 그려지기 전 연속 클릭은 ref로 막는다
+    if (pendingRef.current) return
+    pendingRef.current = true
     setPending(true)
     setFailed(false)
     const { error } = await supabase.auth.signInWithOAuth({
@@ -33,6 +37,7 @@ export function LoginPage() {
       logError('signInWithOAuth', error)
       setFailed(true)
       setPending(false)
+      pendingRef.current = false
     }
   }
 
@@ -40,6 +45,11 @@ export function LoginPage() {
     <main className="login">
       <h1>게임업계 구직 트래커</h1>
       <p>여러 게임사 지원 현황을 한곳에서 관리하세요.</p>
+      {expired && !failed && (
+        <p className="error" role="alert">
+          {errorMessage('AUTH_REQUIRED')}
+        </p>
+      )}
       <button type="button" onClick={signIn} disabled={pending}>
         {pending ? '구글로 이동 중…' : '구글 계정으로 로그인'}
       </button>
