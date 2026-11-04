@@ -104,6 +104,60 @@ function Invoke-Fn {
 }
 ```
 
+### 3-0b. 대안: 브라우저 콘솔에서 `fetch` (2026-11-04 S5 검증에 실제로 쓴 방법)
+
+콘솔의 `copy()`가 클립보드에 쓰지 못하는 환경(브라우저 설정·확장 프로그램 등)에서는 토큰을 PowerShell로 옮기지 말고, **각 계정의 배포 주소 창 콘솔에서 바로 요청한다.** 토큰이 그 브라우저 창 밖으로 나가지 않으므로 터미널 기록·클립보드에 남을 일이 없다. 요청은 배포 주소에서 나가므로 CSP(`connect-src`)와 CORS 허용 목록을 그대로 통과한다.
+
+1) A 창과 B 창 각각의 개발자 도구 콘솔에 아래를 붙여 넣는다(붙여넣기가 막히면 `allow pasting` 먼저). `KEY`에는 Publishable key를 넣는다(공개 키라 콘솔에 써도 된다. secret key는 절대 쓰지 않는다).
+
+```js
+const BASE = 'https://yykukwakssqwuwfjrnce.supabase.co'
+const KEY = '여기에-Publishable-key'
+const ME = JSON.parse(localStorage.getItem('sb-yykukwakssqwuwfjrnce-auth-token'))
+console.log('내 사용자 ID:', ME.user.id)
+
+async function show(label, res) {
+  console.log(label, res.status, await res.text())
+}
+// REST(표·rpc): api('GET', 'ai_usage?select=result')
+async function api(method, path, body) {
+  const res = await fetch(`${BASE}/rest/v1/${path}`, {
+    method,
+    headers: { apikey: KEY, Authorization: `Bearer ${ME.access_token}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  await show(`${method} ${path}`, res)
+}
+// Edge Function: fn({ application_id: '...' })
+async function fn(body) {
+  const res = await fetch(`${BASE}/functions/v1/analyze-posting`, {
+    method: 'POST',
+    headers: { apikey: KEY, Authorization: `Bearer ${ME.access_token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  await show('analyze-posting', res)
+}
+```
+
+2) 출력된 사용자 ID를 서로의 창에 옮겨 적는다(사용자 ID는 비밀이 아니다). 3-2~3-4의 PowerShell 명령과 같은 요청을 이렇게 보낸다:
+
+| 항목 | 어느 창 | 콘솔 명령 | 통과 기준 |
+|---|---|---|---|
+| #17 A 자기 기록 | A | `await api('GET', 'ai_usage?select=result,called_at')` | `200` + A의 기록 |
+| #17 B가 A의 기록 | B | `await api('GET', 'ai_usage?user_id=eq.<A의 ID>&select=id')` | `200 []` |
+| #17 B가 A의 프로필·분석 | B | `await api('GET', 'profiles?user_id=eq.<A의 ID>')` / `await api('GET', 'ai_analyses?application_id=eq.<A의 지원건 ID>')` | `200 []` |
+| #17 직접 쓰기 | A | `await api('POST', 'ai_usage', { user_id: ME.user.id, result: '실패', failure_reason: 'AI 오류' })` / `await api('DELETE', 'ai_usage?user_id=eq.' + ME.user.id)` | `403` + `42501` |
+| #17 한도 함수 직접 호출 | A | `await api('POST', 'rpc/begin_ai_call', { p_user_id: ME.user.id, p_user_limit: 1000 })` | `403` permission denied |
+| #21 전 | A·B | `await api('POST', 'rpc/my_ai_remaining', {})` | A=N, B=M 기록 |
+| #21 요청 (AI 1회) | A | `await fn({ application_id: '<A의 지원건 ID>', user_id: '<B의 ID>', p_user_id: '<B의 ID>' })` | `200` + 분석 결과 |
+| #21 후 | A·B | `await api('POST', 'rpc/my_ai_remaining', {})` | A=N-1, B=M |
+| #22 코멘트 2,001자 | A | `await api('POST', 'ai_analyses', { application_id: '<A의 지원건 ID>', fit_score: 50, comment: '가'.repeat(2001) })` | `400` + `23514` + `ai_analyses_comment_len` |
+| #22 기술 31개 | A | `await api('POST', 'ai_analyses', { application_id: '<A의 지원건 ID>', fit_score: 50, comment: 'x', matched_skills: Array.from({ length: 31 }, (_, i) => 's' + i) })` | `400` + `23514` + `ai_analyses_matched_skills_count` |
+
+3) 끝나면 두 창에서 로그아웃하고 창을 닫는다(콘솔 변수도 사라진다). `console.log(ME)`처럼 토큰을 화면에 출력하거나, 콘솔 내용을 캡처·공유하지 않는다.
+
+> CORS 403(3-1)과 배포 번들 검색(3-5)은 토큰이 필요 없어 PowerShell로 하는 편이 편하다. 콘솔에서 보내는 요청은 Origin이 항상 배포 주소라 허용 안 된 Origin을 흉내 낼 수 없다.
+
 ### 3-1. 운영 CORS (토큰 불필요, AI 호출 없음)
 
 | 요청 | 명령 | 통과 기준 |
