@@ -128,6 +128,34 @@
 
 ---
 
+## Could (Should 완료 후 — PRD 5장 Could 7 관리자 페이지)
+
+### C1. 관리자 표·함수와 한도 판정 변경 (마이그레이션)
+- 표: `admins`, `ai_settings`(1행, 기본 'all'), `ai_allowlist`, `ai_quota_resets`, `admin_actions` — 모두 RLS 켬, 권한은 design 2장·3장 표대로(`admins`·`admin_actions`는 사용자 권한 없음)
+- 함수(design 4.5): `is_admin()` — SECURITY INVOKER(`admins` 본인 행 조회 RLS + authenticated select만) / `admin_list_users()`, `admin_set_ai_access_mode()`, `admin_set_ai_allowed()`, `admin_reset_ai_quota()` — SECURITY DEFINER, `search_path = ''`, **본문 첫 문장 관리자 확인**, `authenticated`만 실행. 쓰기 세 개는 `ai_quota` 잠금 + `admin_actions`(user_id만, 이메일 없음) 기록
+- `begin_ai_call` 교체: 잠금 직후 허용 판정(`AI_NOT_ALLOWED`), 사용자 횟수는 오늘 마지막 초기화 이후만, 전체 횟수는 그대로(design 4.2)
+- `my_ai_remaining` 교체: 같은 초기화 규칙 + `allowed` 반환
+- 기존 테스트 갱신: "authenticated가 실행하는 DEFINER 함수 없음" → "관리자 함수 4개 외 없음"(`tests/s2-ai-quota.test.mjs`, `tests/prod/cross-check.mjs`). CLAUDE.md 보안 규칙 1의 예외 목록(4개)은 설계 단계에서 이미 반영
+- SQL 수준 테스트(로컬): 일반 사용자의 관리자 함수 4개 호출 FORBIDDEN·DB 불변·기록 없음, `is_admin()` false, anon 거부, `admins`에서 일반 사용자 자기 행 0건·다른 사람 행 조회 불가·자기 자신 insert 거부(#24), `admin_actions` 직접 접근 거부, `is_admin` INVOKER 확인, 함수 본문 첫 문장 확인(카탈로그), 초기화 후 사용자 횟수만 복구·전체 유지·ai_usage 불변, 허용 목록 모드 미허용 → `AI_NOT_ALLOWED` + 기록 없음, 허용 후 통과, 동작 기록의 actor·시각, 표시(`my_ai_remaining`)와 판정이 같은 값
+- 검증: **#24, #25, #26, #27**의 DB 쪽, #20 예외 조건
+
+### C2. Edge Function·관리자 화면·개인정보처리방침
+- Edge Function: `AI_NOT_ALLOWED` → 403 `{ error }` (AI 호출 전), 테스트 추가
+- 화면: 상단 메뉴 "관리자"(`is_admin()`이 true일 때만), `/admin` — 유저 목록 표, 모드 스위치(허용 목록이 비었으면 경고), 사용자별 허용·해제, 사용 횟수 초기화(확인 창), 연타 방지, 오류 코드별 문구(FORBIDDEN 등). 상세 화면은 `allowed = false`면 분석 버튼 비활성 + 안내
+- `web/public/privacy.html`: "관리자는 서비스 운영을 위해 가입자의 이메일 목록과 사용량을 볼 수 있다" 추가 (배포 전)
+- E2E: 일반 사용자 메뉴 없음·`/admin` 데이터 없음, 관리자 목록·허용 전환·초기화 후 남은 횟수 복구, 허용 목록 모드에서 미허용 사용자 분석 버튼 비활성·문구
+- 검증: **#24**(화면), #26(문구)
+
+### C3. Could 검증 및 기록
+- 로컬: test:db·test:e2e, Security Advisor(관리자 함수 4개 외 0건)
+- `tests/prod/cross-check.mjs`: 관리자 표 권한, 일반 사용자의 관리자 함수 호출 거부(트랜잭션 + ROLLBACK), DEFINER 노출이 관리자 함수 4개뿐
+- 배포 주소: 관리자 지정(SQL Editor) → 관리자 계정 화면 확인, 일반 계정 거부 확인, 허용 목록 모드 1회 시험 후 'all'로 되돌림, 초기화 1회, `admin_actions` 확인
+- 운영 Security Advisor: 관리자 함수 4개 경고만 남는지(#20 예외)
+- PRD 10장 #24~#27, #20 갱신, README 보완
+- 검증: **#24~#27**, #20
+
+---
+
 ## 검증 번호 → 단계 역참조
 
 | # | 내용(요약) | 구현 단계 | 확인 단계 |
@@ -151,7 +179,11 @@
 | 17 | ai_usage 권한 | S2 | S2, S5 |
 | 18 | 비밀 키 노출 없음 | S3 | S5 |
 | 19 | 깨진 AI 응답 | S3 | S5 |
-| 20 | Security Advisor 0건 | M2, S1, S2 (함수 search_path·RLS) | M7, S5 |
+| 20 | Security Advisor 0건 (Could 이후 관리자 함수 4개 예외) | M2, S1, S2 (함수 search_path·RLS), C1 | M7, S5, C3 |
 | 21 | 본문 user_id 무시 | S3 | S5 |
 | 22 | 길이·개수 상한 | M2, M3 (memo·500건), S2, S3 (분석 결과) | M2, M7, S2, S5 |
 | 23 | 저장 안 된 원문이면 분석 버튼 비활성 | S4 | S4, S5 |
+| 24 | (Could) 일반 사용자의 관리자 화면·함수 거부, 자기 관리자 지정 불가 | C1, C2 | C1, C3 |
+| 25 | (Could) 초기화 후 사용자 횟수만 복구, 전체 유지, 기록 보존 | C1 | C1, C3 |
+| 26 | (Could) 허용 목록 모드에서 미허용 사용자 AI 호출 전 거부 | C1, C2 | C1, C3 |
+| 27 | (Could) 관리자 동작 기록, 수정·삭제 불가 | C1 | C1, C3 |

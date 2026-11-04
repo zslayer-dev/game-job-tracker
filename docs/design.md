@@ -161,6 +161,22 @@ docs/                        설계·계획
 - `check ((result = '실패') = (failure_reason is not null))` — 실패일 때만 사유가 있다.
 - 인덱스: `(called_at)`, `(user_id, called_at)`.
 
+### 관리자 관련 표 (Could, PRD 5장 Could 7)
+
+모두 RLS를 켜고, 사용자 정책·권한은 표마다 아래처럼 최소로 둔다. 관리자의 읽기·쓰기는 전부 관리자 함수(4.5)를 거친다.
+
+| 표 | 컬럼 / 제약 | 사용자(authenticated) 접근 |
+|---|---|---|
+| `admins` | `user_id uuid pk references auth.users on delete cascade`, `created_at` | **본인 행 `select`만**(정책 `user_id = auth.uid()`, `authenticated`에 select만). insert·update·delete 권한 없음 → SQL Editor(postgres)로만 추가·삭제, 사용자는 자신을 관리자로 만들 수 없다. 일반 사용자는 조회해도 0건, 다른 사람의 행은 보이지 않는다(#24) |
+| `ai_settings` | 1행 고정: `id boolean pk default true check (id)`, `access_mode text not null default 'all' check (access_mode in ('all','allowlist'))`, `updated_at`, `updated_by uuid` | `select`만(정책 `using (true)`). 모드는 비밀이 아니고 `my_ai_remaining()`(INVOKER)이 읽는다. 쓰기는 관리자 함수만 |
+| `ai_allowlist` | `user_id uuid pk references auth.users on delete cascade`, `granted_at`, `granted_by uuid` | 본인 행 `select`만(`user_id = auth.uid()`). `my_ai_remaining()`의 허용 여부 표시용 |
+| `ai_quota_resets` | `id uuid pk`, `user_id uuid not null references auth.users on delete cascade`, `reset_at timestamptz not null default now()`, `reset_by uuid not null` / 인덱스 `(user_id, reset_at)` | 본인 행 `select`만. `my_ai_remaining()`이 마지막 초기화 시각을 읽는다 |
+| `admin_actions` | `id uuid pk`, `actor_id uuid not null`, `action text not null check (action in ('ai_allow','ai_disallow','quota_reset','mode_change'))`, `target_user_id uuid null`, `detail jsonb null`, `created_at default now()` | **없음**. 관리자 함수가 같은 트랜잭션에서 기록한다. 화면·API로 고치거나 지울 수 없다(#27) |
+
+- `admin_actions`와 `*_by` 컬럼은 `auth.users`에 외래키를 걸지 않는다: 관리자·대상 사용자가 탈퇴해도 기록이 남아야 한다(uuid만 보관).
+- **`admin_actions`에는 이메일 등 개인정보를 남기지 않고 user_id(uuid)만 남긴다.** 탈퇴하면 `auth.users` 행이 지워져 uuid만으로는 더 이상 사람을 알아볼 수 없다. 기록에 이메일을 복사해 두면 탈퇴 뒤에도 개인정보가 남으므로, 보관하는 개인정보를 최소로 한다. `detail`에도 이메일·이름을 넣지 않는다(모드 값 등 바뀐 설정만). 관리자 화면이 기록을 보여 줄 때는 그 시점의 `auth.users`와 이어 붙여 이메일을 표시하고, 탈퇴한 사용자는 "탈퇴한 사용자"로 보인다.
+- `ai_quota_resets`는 `ai_usage`를 지우지 않고 초기화 시점만 남긴다. 사용자 횟수는 "오늘 시작"과 "오늘 마지막 초기화" 중 늦은 시각 이후만 센다(4.2). 전체 횟수는 그대로 오늘 전부.
+
 ---
 
 ## 3. 권한 규칙 (RLS + 권한 회수)
@@ -187,6 +203,12 @@ docs/                        설계·계획
 | `seed_sample_data()`, `is_profile_empty()`, `my_ai_remaining()` | `execute` |
 | `counts_for_user()`, `ai_daily_limits()`, `ai_day_start()` | `execute` (표를 읽지 않는 순수 계산, 아래 3.1) |
 | `begin_ai_call()`, `finish_ai_call()` | (`authenticated` 아님) `service_role`에게만 `execute` |
+| (Could) `public.ai_settings` | `select`만 |
+| (Could) `public.ai_allowlist`, `public.ai_quota_resets` | `select`만 (RLS: 본인 행) |
+| (Could) `public.admins` | `select`만 (RLS: 본인 행) — `is_admin()`(INVOKER)이 읽는다 |
+| (Could) `public.admin_actions` | **없음** |
+| (Could) `is_admin()` | `execute` (SECURITY INVOKER — admins 본인 행만 읽음) |
+| (Could) `admin_list_users()`, `admin_set_ai_access_mode()`, `admin_set_ai_allowed()`, `admin_reset_ai_quota()` | `execute` (SECURITY DEFINER, 첫 문장에서 관리자 확인 — 4.5, Security Advisor 예외 #20) |
 | `ai_analyses`, `ai_usage` (service_role) | **표 권한 없음.** Edge Function은 표에 직접 쓰지 않고 SECURITY DEFINER 함수만 부른다. 운영은 자동 노출이 꺼져 원래 없고, 로컬 기본 권한도 마이그레이션에서 회수해 같게 만든다(S2, 테스트로 고정) |
 
 ### 3.1 두 겹의 방어
@@ -201,6 +223,10 @@ docs/                        설계·계획
 | profiles | 동일 | 동일 | 동일 | 동일 |
 | ai_analyses | 동일 | check `user_id = auth.uid()` + 복합 FK | 정책 없음(분석은 수정하지 않음) | `user_id = auth.uid()` |
 | ai_usage | `user_id = auth.uid()` | **정책 없음 + 권한 회수** | **없음** | **없음** |
+| (Could) ai_settings | `true` (모드는 공개) | 없음 | 없음 | 없음 |
+| (Could) ai_allowlist, ai_quota_resets | `user_id = auth.uid()` | 없음 | 없음 | 없음 |
+| (Could) admins | `user_id = auth.uid()` | **없음**(권한 없음) | **없음** | **없음** |
+| (Could) admin_actions | **정책 없음 + 권한 회수** | 없음 | 없음 | 없음 |
 
 - `ai_usage` 쓰기는 Edge Function이 `service_role`로 부르는 DB 함수만 한다(service_role은 RLS를 우회).
 - 정책 안에서는 `(select auth.uid())` 형태로 써서 행마다 재평가하지 않게 한다.
@@ -213,6 +239,8 @@ docs/                        설계·계획
     - 테스트로 고정: 본문에 `FROM`이 없고, 표 권한이 하나도 없는 역할로도 실행된다(표를 읽게 바꾸면 실패함을 확인).
   - 트리거 함수(`set_updated_at`, `enforce_application_limit`, `validate_profile_items`) → 직접 호출 권한 없음(내부 사용)
   - **`authenticated`·`anon`이 실행할 수 있는 SECURITY DEFINER 함수는 두지 않는다.** Security Advisor가 "Signed-In Users Can Execute SECURITY DEFINER Function"으로 잡는다(#20). 사용자가 부르는 함수는 INVOKER + RLS로 만들고, DEFINER는 service_role 전용(`begin_ai_call`, `finish_ai_call`)에만 쓴다. 테스트로 고정.
+    - **(Could) 예외: 관리자 함수 4개**(`admin_list_users`, `admin_set_ai_access_mode`, `admin_set_ai_allowed`, `admin_reset_ai_quota`). 가입자 목록은 `auth.users`를 읽어야 하고, 허용·초기화·모드 변경은 사용자 쓰기 권한이 없는 표(`ai_settings`·`ai_allowlist`·`ai_quota_resets`)와 `admin_actions`에 써야 해서 DEFINER가 불가피하다. 보완 규칙: ① 함수 본문 첫 문장이 관리자 확인, ② `search_path = ''`, ③ `anon` 실행 권한 없음, ④ 일반 사용자가 부르면 FORBIDDEN이고 DB 변경·기록 없음, ⑤ 이 4개 외의 DEFINER 노출은 0개 — 모두 테스트로 고정한다. Security Advisor의 해당 경고 4건은 #20의 예외로 기록한다.
+    - `is_admin()`은 예외가 아니다: SECURITY INVOKER로 두고 `admins`에 본인 행 조회 정책과 `authenticated` select 권한만 준다. 관리자 함수(DEFINER) 안에서 부르면 소유자 권한으로 실행되지만 `auth.uid()`는 호출자 그대로라 같은 결과다.
 - **모든 DB 함수 공통 규칙**(PRD 8장 보안):
   - `set search_path = ''`로 고정한다. 특히 `SECURITY DEFINER` 함수는 search_path가 열려 있으면 호출자가 같은 이름의 표·함수를 먼저 찾게 만들어 권한을 가로챌 수 있다.
   - 함수 본문에서 표·함수는 `public.applications`, `public.counts_for_user(...)`처럼 스키마를 붙여 쓴다. `auth.uid()`는 원래 스키마가 붙어 있고, `now()`·`gen_random_uuid()` 같은 기본 함수는 `pg_catalog`라 search_path가 비어도 찾아진다.
@@ -259,8 +287,9 @@ docs/                        설계·계획
 - 순서:
   1. `pg_advisory_xact_lock(hashtextextended('ai_quota', 0))` — **전역 잠금 하나**로 모든 사용자의 판정을 직렬화. 하루 최대 100건이라 병목이 아니며, 잠금 하나로 사용자 한도와 전체 한도가 동시에 지켜진다(#13·#14).
   2. 오늘 시작 = `date_trunc('day', now() at time zone 'Asia/Seoul') at time zone 'Asia/Seoul'` (KST 자정, 내부 함수 `ai_day_start()`).
-  3. 사용자 사용량 = 오늘 + 해당 사용자 + `public.counts_for_user(...)`가 참인 행 수. `>= p_user_limit`이면 예외 `AI_USER_LIMIT`.
-  4. 전체 사용량 = 오늘 + 모든 행(사유 무관). `>= p_global_limit`이면 예외 `AI_GLOBAL_LIMIT`.
+  2-1. (Could) AI 사용 권한: `ai_settings.access_mode = 'allowlist'`이고 `ai_allowlist`에 사용자가 없으면 예외 `AI_NOT_ALLOWED`. 기록을 남기기 전이므로 사용자·전체 횟수에 들어가지 않고 AI도 호출하지 않는다(#26).
+  3. 사용자 사용량 = 해당 사용자 + `public.counts_for_user(...)`가 참 + `called_at >= 사용자 시작 시각`인 행 수. 사용자 시작 시각 = greatest(오늘 시작, 오늘 마지막 초기화 `ai_quota_resets.reset_at`) (Could, #25). `>= p_user_limit`이면 예외 `AI_USER_LIMIT`.
+  4. 전체 사용량 = 오늘 + 모든 행(사유 무관, **초기화와 무관**). `>= p_global_limit`이면 예외 `AI_GLOBAL_LIMIT`.
   5. `insert into public.ai_usage ... result='진행 중'` 후 id 반환.
 - 사용자 한도를 먼저 본다(본인이 다 썼으면 본인 문구가 더 정확).
 
@@ -277,7 +306,7 @@ docs/                        설계·계획
 - 2분 지난 "진행 중"은 **행을 고치지 않고 집계 시점에 계산**한다. 별도 정리 작업(cron)이 필요 없고, 서버가 중간에 죽어도 2분 뒤 자동으로 사용자 횟수에서 빠진다(#16).
 - `begin_ai_call`(서버 판정)과 `my_ai_remaining()`(화면 표시)이 같은 `counts_for_user`·`ai_daily_limits`·`ai_day_start`를 쓰므로 표시와 판정이 어긋나지 않는다(테스트로 고정: 남은 1회면 begin 통과, 0회면 `AI_USER_LIMIT`).
 
-**`public.my_ai_remaining()`** → `{ remaining, daily_limit }`
+**`public.my_ai_remaining()`** → `{ remaining, daily_limit }` — (Could) `allowed` 추가: 모드와 본인 허용 여부, 사용자 시작 시각도 `begin_ai_call`과 같은 규칙. 화면은 `allowed = false`면 분석 버튼을 끄고 "AI 분석 사용 권한이 없습니다"를 보여 준다
 - `SECURITY INVOKER`, `STABLE`, `search_path = ''`, 실행 권한 `authenticated`만. 사용자는 `ai_usage` 본인 행을 RLS로 조회할 수 있으므로 호출자 권한으로 센다.
 - `auth.uid()` 기준으로만 센다(RLS + 조건에도 명시). 인자로 사용자를 받지 않는다. `auth.uid()`가 null이면 `AUTH_REQUIRED`.
 - 변경 이력: S2에서는 내부 함수를 부르려고 DEFINER로 만들었으나, 운영 Security Advisor가 "Signed-In Users Can Execute SECURITY DEFINER Function"으로 잡아 INVOKER로 바꾸고 내부 계산 함수 세 개에 `authenticated` 실행 권한을 줬다(마이그레이션 `20261104150000_my_ai_remaining_invoker.sql`).
@@ -315,6 +344,33 @@ POST { application_id }  (Authorization: 사용자 JWT)
 - 분석 대상은 **DB에 저장된** posting_text다. 그래서 화면은 저장되지 않은 공고 원문 변경이 있으면 분석 버튼을 비활성화한다(PRD 8장, #23). 화면에 보이는 원문과 실제 분석된 원문이 달라지는 일을 막는다.
 - 응답 오류 코드 → 화면 문구 매핑은 프런트 한 곳에서 관리(PRD 문구 그대로, 7.8).
 - 테스트용 `AI_MOCK` 환경 변수(`ok` / `ai_error` / `timeout` / `format_error`)로 6~7단계를 흉내 낸다(#15·#19). **로컬에만 설정**하고, 요청 파라미터로는 절대 바꿀 수 없게 한다.
+
+### 4.5 (Could) 관리자 함수
+
+`is_admin()`을 뺀 네 함수는 `SECURITY DEFINER`, `search_path = ''`, 스키마 명시, 실행 권한 `authenticated`만(anon·service_role 없음). **본문 첫 문장이 관리자 확인**이다:
+
+```sql
+if not public.is_admin() then
+  raise exception 'FORBIDDEN' using errcode = 'P0001';
+end if;
+```
+
+화면에서 메뉴를 숨기는 것은 편의일 뿐이고, 이 확인이 실제 방어선이다(#24).
+
+| 함수 | 하는 일 | 변동성·잠금 |
+|---|---|---|
+| `is_admin() → boolean` | **SECURITY INVOKER**. `exists(select 1 from public.admins where user_id = auth.uid())` — RLS로 본인 행만 보인다. 인자가 없어 남의 관리자 여부는 물을 수 없다. 화면 메뉴 표시와 다른 관리자 함수가 쓴다 | STABLE |
+| `admin_list_users() → table(user_id, email, created_at, last_sign_in_at, application_count, ai_used_today, ai_daily_limit, ai_allowed)` | `auth.users` + 지원 건 **개수** + 오늘 사용자 횟수(`begin_ai_call`과 같은 집계·초기화 규칙) + 실제 허용 여부(모드 반영). 지원 건 내용·프로필·분석 결과는 돌려주지 않는다 | STABLE |
+| `admin_set_ai_access_mode(p_mode text)` | `'all'`/`'allowlist'`만(그 외 `VALIDATION`). 바뀌면 `ai_settings` 갱신 + `admin_actions('mode_change', detail {from,to})` | VOLATILE, `ai_quota` 잠금 |
+| `admin_set_ai_allowed(p_user_id uuid, p_allowed boolean)` | 대상이 `auth.users`에 없으면 `NOT_FOUND`. 허용이면 `ai_allowlist` 추가, 해제면 삭제. 실제로 바뀐 경우에만 `admin_actions('ai_allow' / 'ai_disallow')` | VOLATILE, `ai_quota` 잠금 |
+| `admin_reset_ai_quota(p_user_id uuid)` | 대상 확인 후 `ai_quota_resets` 한 줄 + `admin_actions('quota_reset')`. `ai_usage`는 지우지 않는다 | VOLATILE, `ai_quota` 잠금 |
+
+- 쓰기 함수 세 개는 `begin_ai_call`과 같은 전역 잠금(`'ai_quota'`)을 잡는다 → 권한 변경·초기화가 진행 중인 한도 판정 사이에 끼지 않고, 판정 앞이나 뒤에 온전히 적용된다.
+- 변경과 기록(`admin_actions`)은 같은 트랜잭션이라 기록 없이 바뀌는 일이 없다(#27).
+- "허용 목록만"으로 바꿔도 관리자 자신이 자동으로 허용되지는 않는다. 화면은 허용 목록이 비어 있을 때 모드를 바꾸려 하면 경고한다.
+- 관리자 지정·해제 함수는 없다. 운영자가 SQL Editor에서 한다(7.9).
+- Edge Function: `begin_ai_call`의 `AI_NOT_ALLOWED`를 403 `{ "error": "AI_NOT_ALLOWED" }`로 돌려준다(AI 호출 전).
+- 화면 `/admin`: 메뉴는 `is_admin()`이 true일 때만 보인다. 주소로 직접 들어오면 `admin_list_users()`가 FORBIDDEN을 돌려주므로 데이터 없이 "이 작업을 할 권한이 없습니다"만 보인다. 쓰기 버튼은 `useRef`로 연타를 막고, 초기화는 확인 창을 거친다.
 
 ---
 
@@ -358,7 +414,11 @@ POST { application_id }  (Authorization: 사용자 JWT)
 | 상한(#22) | API로 memo 5,001자, 코멘트 2,001자, 기술 31개 저장 요청, 지원 건 500건 채운 뒤 1건 추가(+ 동시 2건) → 모두 거부 | memo·코멘트·기술 상한만 1회씩 (500건은 로컬에서만) |
 | 저장 안 된 원문(#23) | — | 원문 수정 후 버튼 비활성, 저장 후 활성 |
 | 비밀 키(#18) | `git grep`로 키 패턴 검색 | 배포된 JS 번들 검색 |
-| Security Advisor(#20) | — | 운영 대시보드에서 배포 직전 확인 |
+| Security Advisor(#20) | — | 운영 대시보드에서 배포 직전 확인 (Could 이후: 관리자 함수 4개 경고만 예외) |
+| (Could) 관리자 권한(#24) | 일반 사용자 JWT로 관리자 함수 4개 호출 → FORBIDDEN, `is_admin()` → false, anon → 권한 오류. `admins`: 일반 사용자 조회 0건, 관리자 B가 있어도 일반 사용자 A에게 B의 행이 보이지 않음, 자기 자신 insert·update·delete → 권한 오류. `admin_actions` 직접 읽기·쓰기 → 권한 오류. 호출 뒤 DB·기록 불변. 함수 본문 첫 문장이 관리자 확인인지, DEFINER 노출이 이 4개뿐인지, `is_admin`이 INVOKER인지 카탈로그로 확인 | 일반 계정으로 메뉴 없음·`/admin` 데이터 없음 + 관리자 함수 직접 호출 |
+| (Could) 초기화(#25) | 사용 10회 사용자를 초기화 → `my_ai_remaining`이 한도로 복구, `begin_ai_call`의 전체 한도 판정은 그대로(전체 한도 = 현재 전체 건수면 거부), `ai_usage` 건수 불변 | 관리자 화면에서 1회 |
+| (Could) 허용 목록(#26) | 모드 기본값 'all' 확인 → 'allowlist'로 바꾸고 미허용 사용자 `begin_ai_call` → `AI_NOT_ALLOWED` + ai_usage 증가 없음 → 허용 후 통과. Edge Function은 403 | 관리자 화면에서 전환 후 다른 계정으로 1회, 끝나면 'all'로 되돌림 |
+| (Could) 동작 기록(#27) | 각 관리자 함수 뒤 `admin_actions`의 actor·action·target·시각 확인, 사용자·관리자 JWT로 직접 수정·삭제 → 권한 오류 | SQL Editor로 기록 확인 |
 
 ---
 
@@ -455,6 +515,8 @@ Edge Function의 형식 검증(4.4-7)도 같은 상한을 써서, 통과한 결�
 | AI_GLOBAL_LIMIT | 전체 한도 | 오늘 서비스 전체 분석 한도가 소진되었습니다. |
 | AI_ERROR / AI_TIMEOUT | 제공자 오류·시간 초과 | 분석에 실패했습니다(횟수는 차감되지 않았습니다) |
 | AI_FORMAT | 형식 오류 | 분석 결과 형식이 올바르지 않습니다 |
+| AI_NOT_ALLOWED | (Could) "허용 목록만" 모드에서 미허용 사용자의 분석 요청(함수 403) | AI 분석 사용 권한이 없습니다. 관리자에게 문의해 주세요. |
+| FORBIDDEN (관리자 함수) | (Could) 관리자가 아닌 사용자가 관리자 함수 호출(P0001 `FORBIDDEN`) | 이 작업을 할 권한이 없습니다 (기존 FORBIDDEN 문구와 같음) |
 | INTERNAL | 그 밖의 모든 오류 | 잠시 후 다시 시도해 주세요 |
 
 - Edge Function: 응답 본문은 `{ "error": "<코드>" }`만. 함수 전용 사용: 허용 안 된 Origin → 403 `FORBIDDEN`, JSON이 아닌 본문·POST 아닌 메서드 → 400/405 `VALIDATION`, 형식이 틀린·없는·남의 `application_id` → 404 `NOT_FOUND`. DB·AI 원본 오류 메시지와 스택은 `console.error`로 서버 로그(Supabase 함수 로그)에만 남긴다.
@@ -468,8 +530,11 @@ Edge Function의 형식 검증(4.4-7)도 같은 상한을 써서, 통과한 결�
 | Secret scanning 켜기 | GitHub 저장소 Settings → Code security | M0 (저장소 생성 직후) |
 | Push protection 켜기 | GitHub 저장소 Settings → Code security | M0 |
 | 이메일 공급자 끄기 | Supabase 운영 대시보드 → Auth → Providers | M1, M7·S5에서 재확인 |
-| Security Advisor 경고 0건 확인 | Supabase 운영 대시보드 → Advisors | M7, S5 배포 직전 |
+| Security Advisor 경고 0건 확인 | Supabase 운영 대시보드 → Advisors | M7, S5 배포 직전 (Could 이후: 관리자 함수 4개 예외) |
+| (Could) 관리자 지정·해제 | Supabase 운영 대시보드 → SQL Editor: `insert into public.admins (user_id) values ('<사용자 ID>');` / `delete from public.admins where user_id = '<사용자 ID>';` | 관리자 기능 배포 후 |
+| (Could) 개인정보처리방침 문구 추가 | `web/public/privacy.html` | 관리자 기능 배포 전 |
 
 - **Security Advisor 예외**: Leaked Password Protection 경고는 이메일 로그인 미사용(Won't 6)·무료 플랜 미지원으로 예외로 둔다. 비밀번호 로그인이 꺼져 있어 유출 비밀번호 검사 대상이 없다. 이 경고 외의 항목은 0건이어야 한다(#20).
+- **Security Advisor 예외 (Could)**: 관리자 함수 4개(`admin_list_users`, `admin_set_ai_access_mode`, `admin_set_ai_allowed`, `admin_reset_ai_quota`)의 "Signed-In Users Can Execute SECURITY DEFINER Function" 경고. `is_admin()`은 INVOKER라 해당 없음. 사유와 보완 규칙은 3.1·4.5. 그 밖의 DEFINER 노출 경고는 0건이어야 한다.
 
 - 공개 저장소가 아니면 Secret scanning·Push protection 사용 가능 여부가 요금제에 따라 다를 수 있다 → M0에서 확인하고, 안 되면 커밋 전 `git grep` 확인으로 대신한다.
