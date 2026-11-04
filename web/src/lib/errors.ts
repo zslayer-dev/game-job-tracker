@@ -12,6 +12,8 @@ export type ErrorCode =
   | 'PROFILE_EMPTY'
   | 'AI_USER_LIMIT'
   | 'AI_GLOBAL_LIMIT'
+  | 'AI_NOT_ALLOWED'
+  | 'USER_NOT_FOUND'
   | 'AI_ERROR'
   | 'AI_TIMEOUT'
   | 'AI_FORMAT'
@@ -45,6 +47,9 @@ const MESSAGES: Record<ErrorCode, string> = {
   PROFILE_EMPTY: '먼저 경력 프로필을 입력해 주세요.',
   AI_USER_LIMIT: '오늘 분석 횟수를 모두 사용했습니다. 내일 다시 시도해 주세요.',
   AI_GLOBAL_LIMIT: '오늘 서비스 전체 분석 한도가 소진되었습니다.',
+  AI_NOT_ALLOWED: 'AI 분석 사용 권한이 없습니다. 관리자에게 문의해 주세요.',
+  // 관리자 화면
+  USER_NOT_FOUND: '사용자를 찾을 수 없습니다. 목록을 새로 고쳐 주세요.',
   AI_ERROR: '분석에 실패했습니다. 횟수는 차감되지 않았습니다.',
   AI_TIMEOUT: '분석 시간이 초과되었습니다. 횟수는 차감되지 않았습니다.',
   AI_FORMAT: '분석 결과 형식이 올바르지 않아 표시하지 않았습니다.',

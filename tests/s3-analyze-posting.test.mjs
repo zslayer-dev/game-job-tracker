@@ -372,6 +372,26 @@ describe('#12 한도 초과는 AI 호출 전에 거부, 저장 안 한 분석도
   })
 })
 
+describe('#26 허용 목록 모드: 미허용 사용자는 403 AI_NOT_ALLOWED (AI 호출 전, 횟수 없음)', () => {
+  const setMode = (m) => withDb((db) => db.query('update public.ai_settings set access_mode = $1', [m]))
+  after(() => setMode('all'))
+
+  test('미허용 → 403 AI_NOT_ALLOWED, 기록 없음 / 허용 목록에 넣으면 200', async () => {
+    const u = await newUser('s3-26')
+    const app = await newApp(u)
+    await setMode('allowlist')
+    const denied = await call(u, { application_id: app })
+    assert.deepEqual([denied.status, denied.json], [403, { error: 'AI_NOT_ALLOWED' }])
+    assert.deepEqual(await usage(u.id), [], '기록 전에 거부 = AI 호출 단계에 가지 않음')
+    assert.equal(await remaining(u), 10)
+
+    await withDb((db) => db.query('insert into public.ai_allowlist (user_id, granted_by) values ($1, $1)', [u.id]))
+    const ok = await call(u, { application_id: app })
+    assert.equal(ok.status, 200)
+    assert.deepEqual(await usage(u.id), [{ result: '성공', failure_reason: null }])
+  })
+})
+
 describe('성공 응답 형식', () => {
   test('200 본문은 정해진 네 필드뿐이고 저장은 하지 않는다', async () => {
     const a = await newUser('s3-ok')

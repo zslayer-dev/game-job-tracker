@@ -14,7 +14,8 @@ export type AnalysisResult = {
 
 export type SavedAnalysis = AnalysisResult & { id: string; created_at: string }
 
-export type Remaining = { remaining: number; daily_limit: number }
+// allowed: 허용 목록 모드에서 내가 허용되지 않았으면 false (서버 판정과 같은 규칙)
+export type Remaining = { remaining: number; daily_limit: number; allowed: boolean }
 
 type Result<T> = { data: T; error: null } | { data: null; error: AppError }
 
@@ -29,6 +30,7 @@ const FUNCTION_CODES: ErrorCode[] = [
   'PROFILE_EMPTY',
   'AI_USER_LIMIT',
   'AI_GLOBAL_LIMIT',
+  'AI_NOT_ALLOWED',
   'AI_ERROR',
   'AI_TIMEOUT',
   'AI_FORMAT',

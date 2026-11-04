@@ -528,3 +528,92 @@ table.list td:nth-child(2) {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* 관리자 화면 */
+.admin-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.admin-section h2 {
+  margin: 0;
+  font-size: 1.15em;
+}
+
+.segmented {
+  display: inline-flex;
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.segmented button {
+  border: none;
+  border-radius: 0;
+}
+
+.segmented button[aria-pressed='true'] {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* 열이 많아 모바일에서는 카드 대신 가로 스크롤 */
+.table-scroll {
+  overflow-x: auto;
+}
+
+table.admin-users {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+table.admin-users th,
+table.admin-users td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+table.admin-users td.email {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 12em;
+}
+
+table.admin-users td.num {
+  text-align: right;
+}
+
+.admin-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.badge.off {
+  color: var(--error);
+}
+
+/* 모바일 폭에서 메뉴가 두 개(내 프로필·관리자)면 제목을 한 줄로 따로 두어 로그아웃 버튼이 잘리지 않게 한다 */
+@media (max-width: 600px) {
+  .topbar:has(.nav ~ .nav) {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .topbar:has(.nav ~ .nav) .brand {
+    flex-basis: 100%;
+  }
+
+  .topbar:has(.nav ~ .nav) .account {
+    display: none;
+  }
+
+  .topbar:has(.nav ~ .nav) button {
+    margin-left: auto;
+  }
+}

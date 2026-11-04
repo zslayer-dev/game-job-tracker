@@ -52,7 +52,7 @@ export function AnalysisPanel({ applicationId, postingDirty }: Props) {
 
   async function handleAnalyze() {
     // disabled가 그려지기 전 연속 클릭은 ref로 막는다
-    if (runningRef.current || postingDirty) return
+    if (runningRef.current || postingDirty || remaining?.allowed === false) return
     runningRef.current = true
     setRunning(true)
     setRunError(null)
@@ -85,7 +85,8 @@ export function AnalysisPanel({ applicationId, postingDirty }: Props) {
     setSaved(true)
   }
 
-  const disabled = running || postingDirty
+  const notAllowed = remaining?.allowed === false
+  const disabled = running || postingDirty || notAllowed
 
   return (
     <section className="analysis" aria-labelledby="analysis-title">
@@ -104,6 +105,11 @@ export function AnalysisPanel({ applicationId, postingDirty }: Props) {
           {running ? '분석 중…' : 'AI 분석'}
         </button>
       </div>
+      {notAllowed && (
+        <p className="hint" role="status">
+          {errorMessage('AI_NOT_ALLOWED')}
+        </p>
+      )}
       {postingDirty && (
         <p className="hint" role="status">
           공고 원문을 고쳤습니다. 분석하려면 먼저 저장해 주세요.

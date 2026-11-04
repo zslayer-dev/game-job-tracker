@@ -169,6 +169,7 @@ describe('#24 일반 사용자는 관리자 기능을 쓸 수 없다', () => {
     const row = data.find((r) => r.user_id === plain.id)
     assert.deepEqual(Object.keys(row).sort(), [
       'ai_allowed',
+      'ai_allowlisted',
       'ai_daily_limit',
       'ai_used_today',
       'application_count',
@@ -181,6 +182,7 @@ describe('#24 일반 사용자는 관리자 기능을 쓸 수 없다', () => {
     assert.equal(row.application_count, 2)
     assert.equal(row.ai_daily_limit, 10)
     assert.equal(row.ai_allowed, true)
+    assert.equal(row.ai_allowlisted, false, '전체 허용 모드라 허용되지만 허용 목록에는 없다')
     assert.ok(row.last_sign_in_at, '테스트 사용자는 로그인했으므로 마지막 로그인 시각이 있다')
     assert.ok(!JSON.stringify(data).includes('비밀 메모'), '지원 건 내용은 나오지 않는다')
   })
@@ -256,6 +258,8 @@ describe('#26 AI 사용 권한 (허용 목록 모드)', () => {
 
     assert.equal((await boss.client.rpc('admin_set_ai_allowed', { p_user_id: u.id, p_allowed: true })).data, true)
     assert.equal((await remaining(u)).allowed, true)
+    const listed = (await boss.client.rpc('admin_list_users')).data.find((r) => r.user_id === u.id)
+    assert.deepEqual({ allowed: listed.ai_allowed, listed: listed.ai_allowlisted }, { allowed: true, listed: true })
     assert.equal((await begin(u.id)).error, null)
     assert.equal(await countUsage(), 1)
 

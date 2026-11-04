@@ -361,7 +361,7 @@ end if;
 | 함수 | 하는 일 | 변동성·잠금 |
 |---|---|---|
 | `is_admin() → boolean` | **SECURITY INVOKER**. `exists(select 1 from public.admins where user_id = auth.uid())` — RLS로 본인 행만 보인다. 인자가 없어 남의 관리자 여부는 물을 수 없다. 화면 메뉴 표시와 다른 관리자 함수가 쓴다 | STABLE |
-| `admin_list_users() → table(user_id, email, created_at, last_sign_in_at, application_count, ai_used_today, ai_daily_limit, ai_allowed)` | `auth.users` + 지원 건 **개수** + 오늘 사용자 횟수(`begin_ai_call`과 같은 집계·초기화 규칙) + 실제 허용 여부(모드 반영). 지원 건 내용·프로필·분석 결과는 돌려주지 않는다 | STABLE |
+| `admin_list_users() → table(user_id, email, created_at, last_sign_in_at, application_count, ai_used_today, ai_daily_limit, ai_allowed, ai_allowlisted)` | `auth.users` + 지원 건 **개수** + 오늘 사용자 횟수(`begin_ai_call`과 같은 집계·초기화 규칙) + 실제 허용 여부(모드 반영). 지원 건 내용·프로필·분석 결과는 돌려주지 않는다 | STABLE |
 | `admin_set_ai_access_mode(p_mode text)` | `'all'`/`'allowlist'`만(그 외 `VALIDATION`). 바뀌면 `ai_settings` 갱신 + `admin_actions('mode_change', detail {from,to})` | VOLATILE, `ai_quota` 잠금 |
 | `admin_set_ai_allowed(p_user_id uuid, p_allowed boolean)` | 대상이 `auth.users`에 없으면 `NOT_FOUND`. 허용이면 `ai_allowlist` 추가, 해제면 삭제. 실제로 바뀐 경우에만 `admin_actions('ai_allow' / 'ai_disallow')` | VOLATILE, `ai_quota` 잠금 |
 | `admin_reset_ai_quota(p_user_id uuid)` | 대상 확인 후 `ai_quota_resets` 한 줄 + `admin_actions('quota_reset')`. `ai_usage`는 지우지 않는다 | VOLATILE, `ai_quota` 잠금 |
@@ -373,6 +373,7 @@ end if;
 - "허용 목록만"으로 바꿔도 관리자 자신이 자동으로 허용되지는 않는다. 화면은 허용 목록이 비어 있을 때 모드를 바꾸려 하면 경고한다.
 - 관리자 지정·해제 함수는 없다. 운영자가 SQL Editor에서 한다(7.9).
 - Edge Function: `begin_ai_call`의 `AI_NOT_ALLOWED`를 403 `{ "error": "AI_NOT_ALLOWED" }`로 돌려준다(AI 호출 전).
+- `ai_allowlisted`(C2에서 추가, 마이그레이션 `20261104200000_admin_list_allowlisted.sql`): `ai_allowed`는 실제 허용 여부라 "전체 허용" 모드에서는 모두 true다. 화면이 허용 목록 구성원(사용자별 넣기·빼기 버튼)과 "허용 목록이 비었는지"(모드 전환 경고)를 알려면 목록 포함 여부가 따로 필요하다. `ai_allowlist`는 RLS로 본인 행만 보이므로 이 관리자 함수가 돌려준다.
 - 화면 `/admin`: 메뉴는 `is_admin()`이 true일 때만 보인다. 주소로 직접 들어오면 `admin_list_users()`가 FORBIDDEN을 돌려주므로 데이터 없이 "이 작업을 할 권한이 없습니다"만 보인다. 쓰기 버튼은 `useRef`로 연타를 막고, 초기화는 확인 창을 거친다.
 
 ---

@@ -51,6 +51,7 @@ type ErrorCode =
   | 'PROFILE_EMPTY'
   | 'AI_USER_LIMIT'
   | 'AI_GLOBAL_LIMIT'
+  | 'AI_NOT_ALLOWED'
   | 'AI_ERROR'
   | 'AI_TIMEOUT'
   | 'AI_FORMAT'
@@ -228,6 +229,8 @@ async function handle(req: Request, cors: Record<string, string>): Promise<Respo
 
   const begin = await service.rpc('begin_ai_call', args)
   if (begin.error) {
+    // 허용 목록 모드에서 미허용 사용자(Could, #26): 기록 전 거부라 횟수에 들어가지 않고 AI도 부르지 않는다
+    if (begin.error.message === 'AI_NOT_ALLOWED') return fail(403, 'AI_NOT_ALLOWED')
     if (begin.error.message === 'AI_USER_LIMIT') return fail(429, 'AI_USER_LIMIT')
     if (begin.error.message === 'AI_GLOBAL_LIMIT') return fail(429, 'AI_GLOBAL_LIMIT')
     log('db_error', { step: 'begin_ai_call', code: begin.error.code, user_id: userId })

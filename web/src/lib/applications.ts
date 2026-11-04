@@ -75,6 +75,8 @@ export function toAppError(
   if (error.code === '23502') return { code: 'VALIDATION' }
   if (error.code === 'P0001' && error.message === 'APP_LIMIT') return { code: 'APP_LIMIT' }
   if (error.code === 'P0001' && error.message === 'SAMPLE_NOT_EMPTY') return { code: 'SAMPLE_NOT_EMPTY' }
+  // 관리자 함수: 관리자가 아니면 DB가 FORBIDDEN을 낸다(design.md 4.5)
+  if (error.code === 'P0001' && error.message === 'FORBIDDEN') return { code: 'FORBIDDEN' }
   if (error.code === 'P0001' && error.message === 'AUTH_REQUIRED') {
     reportAuthRequired()
     return { code: 'AUTH_REQUIRED' }

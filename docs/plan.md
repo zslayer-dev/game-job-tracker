@@ -146,6 +146,7 @@
 - `web/public/privacy.html`: "관리자는 서비스 운영을 위해 가입자의 이메일 목록과 사용량을 볼 수 있다" 추가 (배포 전)
 - E2E: 일반 사용자 메뉴 없음·`/admin` 데이터 없음, 관리자 목록·허용 전환·초기화 후 남은 횟수 복구, 허용 목록 모드에서 미허용 사용자 분석 버튼 비활성·문구
 - 검증: **#24**(화면), #26(문구)
+- 진행(2026-11-04, 로컬): Edge Function `AI_NOT_ALLOWED` 403(+ `tests/s3-analyze-posting.test.mjs`), 마이그레이션 `20261104200000_admin_list_allowlisted.sql`(`admin_list_users`에 `ai_allowlisted` 열), `web/src/pages/AdminPage.tsx`·`web/src/lib/admin.ts`, 상단 메뉴(관리자만), 상세 화면 `allowed=false` 안내, `privacy.html` 관리자 문구, E2E `tests/e2e/admin.spec.mjs`(7개). 모바일 폭에서 메뉴가 두 개면 상단 바를 두 줄로. 함수 배포·db push·커밋 전
 
 ### C3. Could 검증 및 기록
 - 로컬: test:db·test:e2e, Security Advisor(관리자 함수 4개 외 0건)
