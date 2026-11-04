@@ -15,6 +15,7 @@
 ## 비밀값
 - 비밀값은 `.env`에만 두고 `.env*`는 `.gitignore`에 넣는다(`.env.example`만 커밋).
 - **service_role 키와 AI 키는 브라우저 코드(`web/`)와 저장소에 절대 넣지 않는다.** 브라우저에는 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`만 간다. AI 키는 `supabase secrets`로 Edge Function에만 둔다.
+- **AI 한도는 DB 기본값(`ai_daily_limits()`)만 쓴다.** 운영 secrets에 `AI_USER_DAILY_LIMIT`·`AI_GLOBAL_DAILY_LIMIT`를 설정하지 않는다(로컬 `supabase/functions/.env`의 테스트용 덮어쓰기 전용).
 
 ## 보안 규칙 (요약 — 상세는 design.md 7장)
 1. **DB 함수**: 모든 함수에 `set search_path = ''`, 표·함수는 `public.applications`처럼 스키마 명시. 실행 권한은 필요한 역할에만. 잠금 후 개수를 세는 함수·트리거는 VOLATILE(기본값) 유지. `anon` 기본 권한은 `alter default privileges`로 회수.

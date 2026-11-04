@@ -143,7 +143,7 @@ docs/                        설계·계획
 | application_id, user_id | `foreign key (application_id, user_id) references applications(id, user_id) on delete cascade` |
 | fit_score | `int not null check (fit_score between 0 and 100)` |
 | matched_skills, missing_skills | `text[] not null`, 각각 `check (cardinality(...) <= 30)` |
-| comment | `text not null check (length(btrim(comment)) > 0 and char_length(comment) <= 2000)` |
+| comment | `text not null`, `ai_analyses_comment_not_blank`: 공백(줄바꿈·탭 포함)만은 거부, `ai_analyses_comment_len`: `char_length(comment) <= 2000` |
 | created_at | `timestamptz not null default now()` |
 
 - 복합 외래키로 "남의 지원 건에 내 분석을 붙이는" 경우를 DB가 막는다.
@@ -186,6 +186,7 @@ docs/                        설계·계획
 | `public.ai_usage` | `select`만 |
 | `seed_sample_data()`, `is_profile_empty()`, `my_ai_remaining()` | `execute` |
 | `begin_ai_call()`, `finish_ai_call()` | (`authenticated` 아님) `service_role`에게만 `execute` |
+| `ai_analyses`, `ai_usage` (service_role) | **표 권한 없음.** Edge Function은 표에 직접 쓰지 않고 SECURITY DEFINER 함수만 부른다. 운영은 자동 노출이 꺼져 원래 없고, 로컬 기본 권한도 마이그레이션에서 회수해 같게 만든다(S2, 테스트로 고정) |
 
 ### 3.1 두 겹의 방어
 
@@ -205,7 +206,7 @@ docs/                        설계·계획
 - DB 함수 실행 권한: 기본 `PUBLIC` 실행 권한을 회수하고 필요한 역할에만 준다.
   - `seed_sample_data()`, `is_profile_empty()`, `my_ai_remaining()` → `authenticated`만
   - `begin_ai_call()`, `finish_ai_call()` → `service_role`만
-  - 트리거 함수(`set_updated_at`, `enforce_application_limit`, `validate_profile_items`)·`counts_for_user()` → 직접 호출 권한 없음(내부 사용)
+  - 트리거 함수(`set_updated_at`, `enforce_application_limit`, `validate_profile_items`)·`counts_for_user()`·`ai_daily_limits()`·`ai_day_start()` → 직접 호출 권한 없음(내부 사용, service_role 포함)
 - **모든 DB 함수 공통 규칙**(PRD 8장 보안):
   - `set search_path = ''`로 고정한다. 특히 `SECURITY DEFINER` 함수는 search_path가 열려 있으면 호출자가 같은 이름의 표·함수를 먼저 찾게 만들어 권한을 가로챌 수 있다.
   - 함수 본문에서 표·함수는 `public.applications`, `public.counts_for_user(...)`처럼 스키마를 붙여 쓴다. `auth.uid()`는 원래 스키마가 붙어 있고, `now()`·`gen_random_uuid()` 같은 기본 함수는 `pg_catalog`라 search_path가 비어도 찾아진다.
@@ -244,12 +245,14 @@ docs/                        설계·계획
 ### 4.2 AI 한도 판정 + "진행 중" 기록 — DB 함수 `public.begin_ai_call()`
 
 - 위치: Postgres 함수, `SECURITY DEFINER`, `search_path = ''`, 실행 권한 `service_role`만. Edge Function이 호출.
-- 시그니처: `begin_ai_call(p_user_id uuid, p_user_limit int, p_global_limit int) returns uuid`
-  - `p_user_id`는 Edge Function이 **검증된 JWT에서 얻은 값만** 넘긴다(4.4, 7.2). 요청 본문 값은 쓰지 않는다.
-  - 한도를 인자로 받아 Edge Function 환경 변수(`AI_USER_DAILY_LIMIT=10`, `AI_GLOBAL_DAILY_LIMIT=100`)로 조정 → 테스트에서 낮춰서 #12·#14 확인. service_role만 부를 수 있으므로 사용자가 한도를 바꿀 수 없다.
+- 시그니처: `begin_ai_call(p_user_id uuid, p_user_limit int default null, p_global_limit int default null) returns uuid`
+  - `p_user_id`는 Edge Function이 **검증된 JWT에서 얻은 값만** 넘긴다(4.4, 7.2). 요청 본문 값은 쓰지 않는다. null이면 `AUTH_REQUIRED`.
+  - **한도 기본값은 DB 한 곳**: 내부 함수 `public.ai_daily_limits()` = (10, 100). 한도 인자가 null이면 이 값을 쓴다. 화면 표시(`my_ai_remaining`)도 같은 함수를 써서 판정과 표시가 어긋나지 않는다. 바꾸려면 마이그레이션으로 이 함수를 교체한다.
+  - 한도 인자는 **로컬 테스트에서 낮출 때만** 쓴다(#12·#14). 운영 Edge Function은 넘기지 않는다(null → DB 기본값). Edge Function 환경 변수 `AI_USER_DAILY_LIMIT`·`AI_GLOBAL_DAILY_LIMIT`는 로컬 `supabase/functions/.env`에서만 선택적으로 쓰고, **운영 secrets에는 설정하지 않는다.** service_role만 부를 수 있으므로 사용자가 한도를 바꿀 수 없다.
+  - S2 착수 시 변경: 처음 설계는 한도를 Edge Function 환경 변수에만 두었는데, `my_ai_remaining()`은 DB에서 실행되어 그 값을 알 수 없어 기본값을 DB로 옮겼다.
 - 순서:
   1. `pg_advisory_xact_lock(hashtextextended('ai_quota', 0))` — **전역 잠금 하나**로 모든 사용자의 판정을 직렬화. 하루 최대 100건이라 병목이 아니며, 잠금 하나로 사용자 한도와 전체 한도가 동시에 지켜진다(#13·#14).
-  2. 오늘 시작 = `date_trunc('day', now() at time zone 'Asia/Seoul') at time zone 'Asia/Seoul'` (KST 자정).
+  2. 오늘 시작 = `date_trunc('day', now() at time zone 'Asia/Seoul') at time zone 'Asia/Seoul'` (KST 자정, 내부 함수 `ai_day_start()`).
   3. 사용자 사용량 = 오늘 + 해당 사용자 + `public.counts_for_user(...)`가 참인 행 수. `>= p_user_limit`이면 예외 `AI_USER_LIMIT`.
   4. 전체 사용량 = 오늘 + 모든 행(사유 무관). `>= p_global_limit`이면 예외 `AI_GLOBAL_LIMIT`.
   5. `insert into public.ai_usage ... result='진행 중'` 후 id 반환.
@@ -266,11 +269,16 @@ docs/                        설계·계획
 | 실패(AI 오류) / 실패(시간 초과) | ❌ | ✅ |
 
 - 2분 지난 "진행 중"은 **행을 고치지 않고 집계 시점에 계산**한다. 별도 정리 작업(cron)이 필요 없고, 서버가 중간에 죽어도 2분 뒤 자동으로 사용자 횟수에서 빠진다(#16).
-- `begin_ai_call`(서버 판정)과 `my_ai_remaining()`(화면 표시)이 같은 `counts_for_user`를 쓰므로 표시와 판정이 어긋나지 않는다.
+- `begin_ai_call`(서버 판정)과 `my_ai_remaining()`(화면 표시)이 같은 `counts_for_user`·`ai_daily_limits`·`ai_day_start`를 쓰므로 표시와 판정이 어긋나지 않는다(테스트로 고정: 남은 1회면 begin 통과, 0회면 `AI_USER_LIMIT`).
+
+**`public.my_ai_remaining()`** → `{ remaining, daily_limit }`
+- `SECURITY DEFINER`(내부 함수 `counts_for_user`를 부르기 위해), `STABLE`, `search_path = ''`, 실행 권한 `authenticated`만.
+- DEFINER라 RLS를 거치지 않으므로 **오직 `auth.uid()` 기준으로만** 센다. 인자로 사용자를 받지 않는다. `auth.uid()`가 null이면 `AUTH_REQUIRED`.
+- 사용자 한도 기준의 남은 횟수만 돌려준다. 전체 한도 소진은 분석 요청 시 `AI_GLOBAL_LIMIT`로 알린다.
 
 ### 4.3 결과 기록 — DB 함수 `public.finish_ai_call(p_id, p_result, p_reason)`
 
-- `SECURITY DEFINER`, `search_path = ''`, `service_role`만.
+- `SECURITY DEFINER`, `search_path = ''`, `service_role`만. 고쳤으면 true, 이미 끝난 행이면 false. `p_result`는 `성공`/`실패`만(그 외 `INVALID_RESULT`), 결과·사유 조합은 표의 CHECK가 막는다.
 - `result = '진행 중'`인 행만 갱신(중복 갱신 방지).
 - **called_at이 2분을 넘었으면 요청 값과 무관하게 `실패(시간 초과)`로 기록** — 2분 넘게 걸린 호출이 뒤늦게 "성공"으로 바뀌어 사용자 횟수에 다시 잡히는 일을 막는다. Edge Function의 AI 호출 타임아웃은 60초로 두어 정상적으로는 2분에 닿지 않게 한다.
 
@@ -286,7 +294,7 @@ POST { application_id }  (Authorization: 사용자 JWT)
 2. 사용자 JWT로 만든 클라이언트(RLS 적용)로 지원 건 조회 → 없으면 404 NOT_FOUND (남의 건 포함)
 3. posting_text 비어 있음 / 8,000자 초과 → 400            ← 횟수 소모 전에 거부
 4. 프로필 조회, is_profile_empty → 400 PROFILE_EMPTY        ← 횟수 소모 전에 거부
-5. service_role로 rpc begin_ai_call(JWT의 user_id, 한도 env)
+5. service_role로 rpc begin_ai_call(JWT의 user_id)   ← 한도 인자는 운영에서 넘기지 않음(DB 기본값). 로컬 .env에 덮어쓰기 값이 있을 때만 넘김
      → AI_USER_LIMIT / AI_GLOBAL_LIMIT면 429 + 구분 코드  ← AI 호출 전 거부
 6. AI 호출 (AbortController 60초, 프롬프트 구성은 7.4)
      - 네트워크·5xx·제공자 오류 → finish(실패, AI 오류) → 502 AI_ERROR

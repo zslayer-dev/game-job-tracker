@@ -89,6 +89,7 @@
 - `counts_for_user()`, `begin_ai_call()`, `finish_ai_call()`(service_role만), `my_ai_remaining()` — 모두 `search_path = ''` + 스키마 명시
 - SQL 수준 테스트(로컬): 낮은 한도로 동시 `begin_ai_call` 호출, 2분 지난 진행 중 행, 사유별 집계, 상한 초과 insert
 - 검증: **#17, #22(분석 결과 DB 쪽)**, #12·#13·#14·#15·#16의 DB 쪽
+- 진행(2026-11-04, 로컬): 마이그레이션 `20261104120000_ai_quota.sql`, `tests/s2-ai-quota.test.mjs`(39개). 한도 기본값을 DB(`ai_daily_limits()`)로 옮기고 `my_ai_remaining()`은 SECURITY DEFINER + auth.uid() 기준(design.md 4.2). 운영 반영 전
 
 ### S3. Edge Function `analyze-posting`
 - 착수 전: Anthropic 콘솔 월 지출 한도 설정(design 7.9)
