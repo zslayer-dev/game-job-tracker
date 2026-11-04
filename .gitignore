@@ -18,3 +18,6 @@ dist/
 # Playwright 실행 결과
 test-results/
 playwright-report/
+
+# 영상 파일(시연 영상은 YouTube 링크로 둔다)
+*.mp4

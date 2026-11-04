@@ -1,6 +1,6 @@
 # 게임업계 구직 트래커
 
-여러 게임사에 동시에 지원하는 프로그래머가 회사마다 다른 전형 단계와 지원 이력을 한곳에서 추적하는 웹 서비스입니다.
+여러 게임사에 동시에 지원하는 클라이언트 프로그래머가 회사마다 다른 전형 단계와 지원 이력을 한곳에서 추적하고, 공고와 내 경력의 적합도를 AI로 분석하는 웹 서비스입니다.
 
 - **배포 주소: https://game-job-tracker.vercel.app**
 - **시연 영상: https://youtu.be/DsNbyke9kxs** (1분 58초)
@@ -53,6 +53,14 @@
 **관리자 화면** (로컬 테스트 계정, 이메일은 가림)
 
 ![관리자](docs/images/admin.png)
+
+## AI와 만든 방식
+
+- **Claude Code**와 함께 만들었습니다. 작업 규칙(단계 진행, 비밀값, 보안, PowerShell 기준 명령)은 [CLAUDE.md](CLAUDE.md)에 적어 두고 매번 따르게 했습니다.
+- 코드보다 **PRD → 설계(design.md) → 계획(plan.md)**을 먼저 정했고, PRD와 설계가 어긋나면 코드를 쓰기 전에 짚고 넘어갔습니다.
+- plan.md의 **단계 하나씩** 진행하고, 끝날 때마다 완료 조건과 PRD 검증 번호를 확인한 뒤 멈춰서 승인을 받았습니다.
+- AI가 만든 코드는 **별도 리뷰**를 거쳤고, 잠금·권한·연타 방지 등을 **일부러 깨뜨려 테스트가 실제로 실패하는지** 확인했습니다.
+- 가장 효과적이었던 프롬프트는 [retrospective.md](retrospective.md#가장-효과적이었던-프롬프트)에 정리했습니다.
 
 ## 기술 스택
 
@@ -128,7 +136,7 @@ npx supabase db advisors --type security          # 로컬 보안 점검
 | `tests/c1-admin.test.mjs` | 일반 사용자의 관리자 함수 거부·DB 불변, `admins` 자기 행만·자기 추가 불가, 초기화 후 사용자 횟수만 복구·전체 유지, 허용 목록 모드 AI 호출 전 거부, 동작 기록과 수정 불가, DEFINER 노출은 관리자 함수 4개뿐·첫 문장 관리자 확인 |
 | `tests/e2e/analysis.spec.mjs` | AI 분석 → 저장 → 새로고침 유지, 원문 수정 시 버튼 비활성, 오류 문구, 연타 1회, 결과를 텍스트로만 렌더링 (AI는 흉내 모드) |
 | `tests/e2e/admin.spec.mjs` | 관리자 화면: 일반 사용자 메뉴 없음·`/admin` 거부, 목록, 빈 허용 목록 경고, 허용 목록 모드 전환·차단 표시, 초기화, 기록 |
-| `tests/prod/cross-check.mjs` | 운영 DB에서 한 트랜잭션 안에 다른 계정 접근·로그아웃·상한·권한(Should 표·관리자 기능 포함)을 검사하고 ROLLBACK (`npm run test:prod`, 절차는 m7-checklist.md 6장). 운영 실행: 2026-11-04 18개(applications만) → S5 48개 통과. C3에서 관리자 검사(#24, 초기화 #25, 동작 기록 #27)를 더해 로컬 77개(운영은 78개 예상) |
+| `tests/prod/cross-check.mjs` | 운영 DB에서 한 트랜잭션 안에 다른 계정 접근·로그아웃·상한·권한(Should 표·관리자 기능 포함)을 검사하고 ROLLBACK (`npm run test:prod`, 절차는 m7-checklist.md 6장). 운영 실행: 2026-11-04 18개(applications만) → S5 48개 통과 → C3에서 관리자 검사(#24, 초기화 #25, 동작 기록 #27)를 더해 **C3 이후 운영 78개 통과(2026-11-04), 관리자 초기화 잠금 유지 122ms**, ROLLBACK 완료·운영 데이터 변경 없음 |
 
 배포 주소에서의 검증 절차는 [docs/m7-checklist.md](docs/m7-checklist.md)(Must), [docs/s5-checklist.md](docs/s5-checklist.md)(Should), [docs/c3-checklist.md](docs/c3-checklist.md)(Could 관리자), 결과는 [PRD.md](PRD.md) 10장에 기록합니다.
 
@@ -137,15 +145,18 @@ npx supabase db advisors --type security          # 로컬 보안 점검
 - **Supabase 무료 플랜 일시 정지**: 일정 기간(약 1주) 활동이 없으면 프로젝트가 일시 정지됩니다. 접속이 안 되면 대시보드에서 다시 시작해야 하며, 심사 기간에는 미리 접속해 깨워 둡니다.
 - **Vercel 미리보기 주소에서는 로그인 불가**: 로그인 복귀 주소(Redirect URLs)를 보안상 와일드카드 없이 배포 주소와 `http://localhost:5173`만 등록했기 때문입니다. 로그인은 배포 주소에서만 됩니다.
 - 구글 계정 로그인만 지원합니다(이메일·비밀번호 로그인 없음).
+- **Anthropic API 크레딧 소진·키 만료 시 AI 분석은 실패합니다.** 화면에는 "분석에 실패했습니다"가 보이고, 이런 제공자 쪽 오류는 내 남은 횟수에서 차감되지 않습니다(서비스 전체 하루 100회 상한에는 포함). 지원 이력 관리는 영향을 받지 않습니다.
 
 ## 문서
 
 | 문서 | 내용 |
 |---|---|
 | [PRD.md](PRD.md) | 요구사항, 서비스 규칙, 검증 기록(10장) |
+| [CLAUDE.md](CLAUDE.md) | AI(Claude Code)와 작업하는 규칙: 기준 문서, 단계 진행, 비밀값, 보안 규칙, 테스트, 로컬 실행 |
 | [docs/design.md](docs/design.md) | 기술 결정, 표 구조, 권한, 원자적 처리, 보안 규칙 |
 | [docs/plan.md](docs/plan.md) | 단계별 작업 목록과 검증 번호 |
 | [docs/m7-checklist.md](docs/m7-checklist.md) | 배포 주소 Must 검증 절차, 운영 DB 롤백 검사 실행 방법 |
 | [docs/s5-checklist.md](docs/s5-checklist.md) | Should 검증: 배포 주소 확인 항목과 로컬 테스트로 대신하는 항목 |
 | [docs/c3-checklist.md](docs/c3-checklist.md) | Could(관리자) 검증: 배포 주소 확인 항목과 로컬 테스트로 대신하는 항목 |
+| [docs/demo-script.md](docs/demo-script.md) | 시연 영상 대본(장면별 말할 문장·화면 동작·목표 길이), 녹화 전 준비와 정리 |
 | [retrospective.md](retrospective.md) | 회고 |
