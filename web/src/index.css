@@ -368,3 +368,80 @@ table.list td:nth-child(2) {
   display: flex;
   gap: 8px;
 }
+
+/* 상단 바 메뉴 */
+.topbar .nav {
+  flex-shrink: 0;
+  white-space: nowrap;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.topbar .nav.active {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* 태그 입력 (프로필의 엔진·기술 스택) */
+.tag-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 4px 2px 10px;
+  border-radius: 999px;
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+
+.tag button {
+  padding: 0 6px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.1em;
+  line-height: 1.4;
+}
+
+.tag-add {
+  display: flex;
+  gap: 8px;
+}
+
+.tag-add input {
+  flex: 1;
+  min-width: 0;
+}
+
+.tag-add button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.hint {
+  margin: 0;
+  color: var(--error);
+  font-size: 0.9em;
+}

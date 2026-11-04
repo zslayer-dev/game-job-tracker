@@ -58,7 +58,7 @@ function toInput(form: FormState): ApplicationInput {
   }
 }
 
-function Counter({ value, max }: { value: string; max: number }) {
+export function Counter({ value, max }: { value: string; max: number }) {
   const count = charCount(value)
   return (
     <span className={count > max ? 'counter over' : 'counter'}>

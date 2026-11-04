@@ -81,6 +81,7 @@
 - `seed_sample_data()` 교체: 프로필이 비어 있으면 가상 프로필도 채움
 - 완료 조건: 저장·새로고침 유지, 다른 계정에서 안 보임, 빈 계정 샘플 채우기 시 프로필도 생성
 - 검증: (#11의 선행 조건. 프로필 격리는 #5와 같은 방식으로 추가 확인)
+- 진행(2026-11-04, 로컬): 마이그레이션 `20261104090000_profiles.sql`, 화면 `/profile`, `tests/s1-profiles.test.mjs`(34개), E2E에 프로필 저장·격리·샘플 프로필 추가. `is_profile_empty()`는 설계를 바꿔 인자 없음 + `authenticated` 실행(design.md 2장). 운영 반영 전
 
 ### S2. AI 관련 표와 한도 함수 (마이그레이션)
 - `ai_analyses`(복합 FK, 연쇄 삭제, **comment 2,000자·기술 목록 각 30개 CHECK**), `ai_usage`(결과·사유 CHECK)

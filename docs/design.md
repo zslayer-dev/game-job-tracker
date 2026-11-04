@@ -123,11 +123,18 @@ docs/                        설계·계획
 | 컬럼 | 타입 / 제약 |
 |---|---|
 | user_id | `uuid pk default auth.uid() references auth.users on delete cascade` — 사용자당 1개 |
-| summary, strengths, gaps | `text null` |
-| engines, skills | `text[] not null default '{}'` |
-| updated_at | `timestamptz not null default now()` + 트리거 |
+| summary, strengths, gaps | `text null`, 각각 `check (char_length(...) <= 2000)` (`profiles_summary_len` 등) |
+| engines, skills | `text[] not null default '{}'`, 각각 `check (cardinality(...) <= 30)` (`profiles_engines_count` 등) |
+| updated_at | `timestamptz not null default now()` + 트리거(`set_updated_at`) |
 
-- "프로필이 비어 있음" 정의를 SQL 함수 하나로 고정: `public.is_profile_empty(p)` = 행이 없거나, 모든 텍스트가 공백이고 두 배열이 비어 있음. Edge Function과 샘플 채우기가 같은 정의를 쓴다.
+- **항목 검사(엔진·기술 하나하나)**: 1~50자, null·공백(줄바꿈·탭 포함)만으로 된 항목 거부. CHECK에는 서브쿼리를 쓸 수 없고, CHECK에 함수를 쓰면 그 함수에 `authenticated` 실행 권한을 줘야 해 API로 노출되므로 `BEFORE INSERT OR UPDATE` 트리거 `validate_profile_items()`로 막는다(트리거 함수는 실행 권한이 필요 없음). 오류는 CHECK 위반과 같은 형식(`23514` + 제약 이름 `profiles_engines_items` / `profiles_skills_items`)으로 내서 화면이 같은 방식으로 필드를 찾는다.
+- 저장은 `upsert(on conflict user_id)`. `user_id`는 기본값 `auth.uid()`가 채우므로 화면은 보내지 않는다.
+- "프로필이 비어 있음" 정의를 SQL 함수 하나로 고정: **`public.is_profile_empty()`** (인자 없음, `SECURITY INVOKER`, `STABLE`, `search_path = ''`)
+  - 호출한 본인(`auth.uid()`)의 프로필만 RLS 아래에서 본다. 행이 없거나, 세 텍스트가 모두 비었거나 공백뿐(줄바꿈·탭 포함)이고 두 배열이 비어 있으면 true.
+  - 인자로 사용자를 받지 않으므로 다른 사용자의 프로필 유무는 알 수 없다(테스트로 확인).
+  - 샘플 채우기와 Edge Function(사용자 JWT 클라이언트로 `rpc('is_profile_empty')`)이 같은 정의를 쓴다.
+  - S1 착수 시 변경: 처음 설계는 `is_profile_empty(p)` + "직접 호출 권한 없음(내부용)"이었지만, 부르는 두 곳(`seed_sample_data()` = SECURITY INVOKER, Edge Function = 사용자 JWT)이 모두 `authenticated`로 실행되고 Postgres는 함수 안에서 부른 함수의 실행 권한도 호출자 기준으로 확인한다. 내부용으로 막으면 샘플 채우기가 permission denied로 실패하므로 `authenticated`에게 실행 권한을 준다. 알려 주는 정보는 "내 프로필이 비었는지"뿐이다.
+  - 잠금 후 개수를 세는 함수가 아니므로 STABLE로 둔다.
 
 ### ai_analyses (Should)
 | 컬럼 | 타입 / 제약 |
@@ -177,7 +184,7 @@ docs/                        설계·계획
 | `public.applications`, `public.profiles` | `select, insert, update, delete` |
 | `public.ai_analyses` | `select, insert, delete` |
 | `public.ai_usage` | `select`만 |
-| `seed_sample_data()`, `my_ai_remaining()` | `execute` |
+| `seed_sample_data()`, `is_profile_empty()`, `my_ai_remaining()` | `execute` |
 | `begin_ai_call()`, `finish_ai_call()` | (`authenticated` 아님) `service_role`에게만 `execute` |
 
 ### 3.1 두 겹의 방어
@@ -196,9 +203,9 @@ docs/                        설계·계획
 - `ai_usage` 쓰기는 Edge Function이 `service_role`로 부르는 DB 함수만 한다(service_role은 RLS를 우회).
 - 정책 안에서는 `(select auth.uid())` 형태로 써서 행마다 재평가하지 않게 한다.
 - DB 함수 실행 권한: 기본 `PUBLIC` 실행 권한을 회수하고 필요한 역할에만 준다.
-  - `seed_sample_data()`, `my_ai_remaining()` → `authenticated`만
+  - `seed_sample_data()`, `is_profile_empty()`, `my_ai_remaining()` → `authenticated`만
   - `begin_ai_call()`, `finish_ai_call()` → `service_role`만
-  - 트리거 함수·`counts_for_user()`·`is_profile_empty()` → 직접 호출 권한 없음(내부 사용)
+  - 트리거 함수(`set_updated_at`, `enforce_application_limit`, `validate_profile_items`)·`counts_for_user()` → 직접 호출 권한 없음(내부 사용)
 - **모든 DB 함수 공통 규칙**(PRD 8장 보안):
   - `set search_path = ''`로 고정한다. 특히 `SECURITY DEFINER` 함수는 search_path가 열려 있으면 호출자가 같은 이름의 표·함수를 먼저 찾게 만들어 권한을 가로챌 수 있다.
   - 함수 본문에서 표·함수는 `public.applications`, `public.counts_for_user(...)`처럼 스키마를 붙여 쓴다. `auth.uid()`는 원래 스키마가 붙어 있고, `now()`·`gen_random_uuid()` 같은 기본 함수는 `pg_catalog`라 search_path가 비어도 찾아진다.
@@ -228,7 +235,7 @@ docs/                        설계·계획
   2. `pg_advisory_xact_lock(hashtextextended('apps:' || auth.uid(), 0))` — **같은 사용자의 동시 호출을 직렬화**. 다른 사용자끼리는 서로 막지 않음. 트랜잭션 종료 시 자동 해제.
   3. `exists(select 1 from public.applications where user_id = auth.uid())`이면 예외 `SAMPLE_NOT_EMPTY` → 화면은 "이미 지원 건이 있습니다".
   4. 가상 회사 지원 건 6개 insert (공고 원문 포함, 지원일 빈 건·상태 다양하게 섞어 #3 확인에도 쓰임).
-  5. (Should 단계에서 함수 교체) 프로필이 비어 있으면 가상 프로필 upsert.
+  5. (S1에서 함수 교체) `is_profile_empty()`이면 가상 프로필 upsert. 빈 프로필 행이 이미 있으면 그 행을 채우고, 직접 쓴 프로필은 덮어쓰지 않는다. 3에서 거부되면 프로필도 건드리지 않는다. 같은 잠금 안이라 동시 호출에도 프로필은 1행.
   6. 넣은 건수 반환.
 - 왜 이걸로 충분한가: 두 번째 호출은 2에서 첫 호출의 커밋까지 대기 → 3에서 이미 있는 행을 보고 거부. 결과적으로 한 세트만 들어간다(#8).
 - 화면 쪽 중복 클릭 방지(M5 로컬 확인): 버튼 `disabled`는 다시 그려진 뒤에야 적용되어, 같은 틱의 연속 클릭은 요청이 여러 번 나간다(샘플 버튼 3연타 → 요청 3건, DB는 6건만 들어갔지만 나머지 2건이 `SAMPLE_NOT_EMPTY` 오류로 표시됨). 그래서 처리 중 여부를 `useRef`로도 막는다(샘플 채우기·폼 저장·삭제). 이후 AI 분석 버튼(S4)도 같은 방식을 쓴다.

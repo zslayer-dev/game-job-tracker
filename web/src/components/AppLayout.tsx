@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Link, Outlet } from 'react-router'
+import { Link, NavLink, Outlet } from 'react-router'
 import { useAuth } from '../auth/useAuth'
 import { errorMessage } from '../lib/errors'
 
@@ -30,6 +30,9 @@ export function AppLayout() {
         <Link to="/" className="brand">
           게임업계 구직 트래커
         </Link>
+        <NavLink to="/profile" className="nav">
+          내 프로필
+        </NavLink>
         <span className="account">{session?.user.email}</span>
         <button type="button" onClick={handleSignOut} disabled={pending}>
           {pending ? '로그아웃 중…' : '로그아웃'}

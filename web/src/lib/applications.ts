@@ -1,6 +1,6 @@
 import type { PostgrestError } from '@supabase/supabase-js'
 import { reportAuthRequired } from './authEvents'
-import { logError, type AppError } from './errors'
+import { logError, type AppError, type ValidationField } from './errors'
 import { companySearchPattern } from './search'
 import { supabase } from './supabase'
 
@@ -53,20 +53,24 @@ export function validate(input: ApplicationInput): AppError | null {
   return null
 }
 
+// CHECK 제약 이름 → 화면 필드
+const APPLICATION_FIELDS: Record<string, ValidationField> = {
+  applications_company_not_blank: 'company',
+  applications_position_not_blank: 'position',
+  applications_posting_text_len: 'posting_text',
+  applications_memo_len: 'memo',
+}
+
 // 원본 오류는 화면에 띄우지 않고 정해진 코드로만 바꾼다(design.md 7.8)
-function toAppError(error: PostgrestError): AppError {
-  logError('applications', error)
+export function toAppError(
+  error: PostgrestError,
+  fields: Record<string, ValidationField> = APPLICATION_FIELDS,
+  context = 'applications',
+): AppError {
+  logError(context, error)
   if (error.code === '23514') {
     const constraint = /check constraint "([^"]+)"/.exec(error.message)?.[1]
-    const field = (
-      {
-        applications_company_not_blank: 'company',
-        applications_position_not_blank: 'position',
-        applications_posting_text_len: 'posting_text',
-        applications_memo_len: 'memo',
-      } as const
-    )[constraint ?? '']
-    return { code: 'VALIDATION', field }
+    return { code: 'VALIDATION', field: fields[constraint ?? ''] }
   }
   if (error.code === '23502') return { code: 'VALIDATION' }
   if (error.code === 'P0001' && error.message === 'APP_LIMIT') return { code: 'APP_LIMIT' }

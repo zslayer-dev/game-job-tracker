@@ -1,4 +1,4 @@
-// 로컬 화면 교차 검증: 실제 화면을 조작해 PRD #1·#2·#5·#6·#8을 확인한다.
+// 로컬 화면 교차 검증: 실제 화면을 조작해 PRD #1·#2·#5·#6·#8과 S1(프로필 저장·격리·샘플 프로필)을 확인한다.
 // 로컬 스택 전용. 임시 사용자 A·B·C를 만들어 세션을 주입하고, 끝나면 지운다.
 import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
@@ -112,7 +112,7 @@ test('로그아웃 상태: 보호된 주소는 로그인 화면으로, 지원 �
     if (req.url().includes('/rest/v1/')) restCalls.push(req.url())
   })
 
-  for (const path of ['/', '/applications/new', `/applications/${appId}`]) {
+  for (const path of ['/', '/applications/new', `/applications/${appId}`, '/profile']) {
     await page.goto(path)
     await expect(page).toHaveURL('/login')
     await expect(page.getByRole('button', { name: '구글 계정으로 로그인' })).toBeVisible()
@@ -144,4 +144,75 @@ test('빈 계정에서 샘플 채우기를 빠르게 여러 번 눌러도 6건�
   expect(seedCalls).toHaveLength(1)
   const { count } = await admin.from('applications').select('*', { count: 'exact', head: true }).eq('user_id', userC.id)
   expect(count).toBe(6)
+
+  // 프로필이 비어 있던 계정이라 가상 프로필도 함께 채워진다 (S1)
+  await page.getByRole('link', { name: '내 프로필' }).click()
+  await expect(page.getByRole('textbox', { name: /경력 요약/ })).toHaveValue(/샘플 프로필/)
+  await expect(page.getByRole('group', { name: '주력 엔진' }).getByRole('listitem')).not.toHaveCount(0)
+})
+
+const profileSummary = `E2E 프로필 ${randomUUID().slice(0, 8)}`
+
+test('A: 프로필 저장 → 새로고침 후 유지, 태그 추가·삭제 (S1)', async ({ page }) => {
+  await loginAs(page, userA)
+  await page.goto('/profile')
+
+  const summary = page.getByRole('textbox', { name: /경력 요약/ })
+  await expect(summary).toHaveValue('')
+  await summary.fill(profileSummary)
+
+  const engines = page.getByRole('group', { name: '주력 엔진' })
+  const skills = page.getByRole('group', { name: '기술 스택' })
+  // 엔진은 Enter로, 기술은 [추가] 버튼으로 넣는다
+  for (const name of ['Unity', 'Unreal Engine 5']) {
+    await engines.getByRole('textbox', { name: '주력 엔진 추가' }).fill(name)
+    await engines.getByRole('textbox', { name: '주력 엔진 추가' }).press('Enter')
+  }
+  await expect(page).toHaveURL('/profile') // Enter가 폼을 제출하지 않는다
+  for (const name of ['C#', 'C++']) {
+    await skills.getByRole('textbox', { name: '기술 스택 추가' }).fill(name)
+    await skills.getByRole('button', { name: '추가' }).click()
+  }
+  // 같은 항목은 다시 들어가지 않는다
+  await skills.getByRole('textbox', { name: '기술 스택 추가' }).fill('c#')
+  await skills.getByRole('button', { name: '추가' }).click()
+  await expect(skills.getByText('이미 있는 항목입니다.')).toBeVisible()
+  await expect(skills.getByRole('listitem')).toHaveCount(2)
+
+  await page.getByRole('textbox', { name: /강점/ }).fill('프로파일링으로 최적화')
+  await page.getByRole('button', { name: '저장', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: '저장했습니다.' })).toBeVisible()
+
+  await page.reload()
+  await expect(summary).toHaveValue(profileSummary)
+  await expect(engines.getByRole('listitem')).toHaveText(['Unity×', 'Unreal Engine 5×'])
+  await expect(skills.getByRole('listitem')).toHaveText(['C#×', 'C++×'])
+  await expect(page.getByRole('textbox', { name: /강점/ })).toHaveValue('프로파일링으로 최적화')
+
+  // 태그 삭제도 저장 후 유지
+  await engines.getByRole('button', { name: 'Unity 삭제' }).click()
+  await page.getByRole('button', { name: '저장', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: '저장했습니다.' })).toBeVisible()
+  await page.reload()
+  await expect(engines.getByRole('listitem')).toHaveText(['Unreal Engine 5×'])
+
+  const { data } = await admin.from('profiles').select('summary, engines, skills').eq('user_id', userA.id).single()
+  expect(data).toEqual({ summary: profileSummary, engines: ['Unreal Engine 5'], skills: ['C#', 'C++'] })
+})
+
+test('B: A의 프로필이 보이지 않고, 직접 요청해도 0건 (S1 교차 검증)', async ({ page }) => {
+  await loginAs(page, userB)
+  await page.goto('/profile')
+
+  await expect(page.getByRole('textbox', { name: /경력 요약/ })).toHaveValue('')
+  await expect(page.getByRole('group', { name: '주력 엔진' }).getByRole('listitem')).toHaveCount(0)
+  await expect(page.getByText(profileSummary)).toHaveCount(0)
+
+  const sel = await userB.client.from('profiles').select('*').eq('user_id', userA.id)
+  expect(sel.data).toEqual([])
+  const upd = await userB.client.from('profiles').update({ summary: 'B가 바꿈' }).eq('user_id', userA.id).select()
+  expect(upd.data).toEqual([])
+
+  const { data } = await admin.from('profiles').select('summary').eq('user_id', userA.id).single()
+  expect(data.summary).toBe(profileSummary)
 })

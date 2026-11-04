@@ -6,6 +6,7 @@ import { ApplicationDetailPage } from './pages/ApplicationDetailPage'
 import { ApplicationsPage } from './pages/ApplicationsPage'
 import { LoginPage } from './pages/LoginPage'
 import { NewApplicationPage } from './pages/NewApplicationPage'
+import { ProfilePage } from './pages/ProfilePage'
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
               <Route path="/" element={<ApplicationsPage />} />
               <Route path="/applications/new" element={<NewApplicationPage />} />
               <Route path="/applications/:id" element={<ApplicationDetailPage />} />
+              <Route path="/profile" element={<ProfilePage />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

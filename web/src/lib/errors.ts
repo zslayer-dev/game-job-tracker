@@ -10,7 +10,16 @@ export type ErrorCode =
   | 'INTERNAL'
 
 // VALIDATION은 어느 필드인지(제약 이름에서 알아냄)에 따라 문구를 고른다
-export type ValidationField = 'company' | 'position' | 'posting_text' | 'memo'
+export type ValidationField =
+  | 'company'
+  | 'position'
+  | 'posting_text'
+  | 'memo'
+  | 'summary'
+  | 'strengths'
+  | 'gaps'
+  | 'engines'
+  | 'skills'
 
 export type AppError = { code: ErrorCode; field?: ValidationField }
 
@@ -30,6 +39,11 @@ const VALIDATION_MESSAGES: Record<ValidationField, string> = {
   position: '포지션을 입력해 주세요.',
   posting_text: '공고 원문은 8,000자 이하로 줄여 주세요.',
   memo: '메모는 5,000자 이하로 줄여 주세요.',
+  summary: '경력 요약은 2,000자 이하로 줄여 주세요.',
+  strengths: '강점은 2,000자 이하로 줄여 주세요.',
+  gaps: '보완점은 2,000자 이하로 줄여 주세요.',
+  engines: '주력 엔진은 30개까지, 각 50자 이하로 입력해 주세요.',
+  skills: '기술 스택은 30개까지, 각 50자 이하로 입력해 주세요.',
 }
 
 export function errorMessage(error: ErrorCode | AppError): string {
