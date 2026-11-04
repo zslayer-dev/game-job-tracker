@@ -1,4 +1,4 @@
-// 운영 DB 교차 검증 (npm run test:prod) — PRD #5, #6, #17, #22(memo·분석 결과), Should 표(profiles·ai_analyses·ai_usage) 교차 검증, 권한 점검.
+// 운영 DB 교차 검증 (npm run test:prod) — PRD #5, #6, #17, #22(memo·분석 결과), Should 표(profiles·ai_analyses·ai_usage) 교차 검증, 관리자 기능(#24 #25 #27), 권한 점검.
 // 전부 하나의 트랜잭션 안에서 실행하고 마지막에 반드시 ROLLBACK 한다. 운영 데이터는 바뀌지 않는다.
 //
 // 입력(환경 변수로만 받는다. 값은 파일·로그·출력에 남기지 않는다):
@@ -90,6 +90,9 @@ const userB = randomUUID()
 const emails = [`prodcheck-a-${tag}@example.invalid`, `prodcheck-b-${tag}@example.invalid`]
 
 let rolledBack = false
+// 관리자 초기화(#25 #27)가 전역 잠금을 잡은 시각. ROLLBACK까지의 시간을 출력한다.
+let lockStartedAt = null
+let lockHeldMs = null
 let connected = false
 try {
   await db.connect()
@@ -526,6 +529,77 @@ try {
       .map((x) => x.proname)
     record('함수: 관리자 함수 4개는 본문 첫 문장이 관리자 확인', f.length === 5 && bad.length === 0, bad.length ? `어긋남 ${bad.join(', ')}` : '')
   }
+
+  // ── #25 #27 관리자 초기화 (반드시 마지막: 관리자 쓰기 함수는 전역 잠금 'ai_quota'를 잡고, 잠금은 ROLLBACK까지 유지된다)
+  // 여기서부터 ROLLBACK까지가 운영의 분석 요청(begin_ai_call)이 기다릴 수 있는 시간이다 → 잠금 유지 시간을 출력한다.
+  if (hasAdmin) {
+    const usedRows = 4
+    // 한 트랜잭션 안에서는 now()가 늘 같아 기록 시각 = 초기화 시각이 된다(실제로는 다른 트랜잭션이라 다름).
+    // 초기화 "전" 기록이 되도록 1초 앞선 시각(오늘 안)으로 넣는다.
+    await db.query(
+      `insert into public.ai_usage (user_id, result, called_at)
+       select $1, '성공', greatest(public.ai_day_start(), now() - interval '1 second') from generate_series(1, $2)`,
+      [userB, usedRows],
+    )
+    const counts = async () =>
+      (
+        await db.query(
+          `select (select count(*)::int from public.ai_usage where user_id = $1) as b_rows,
+                  (select count(*)::int from public.ai_usage where called_at >= public.ai_day_start()) as today_all`,
+          [userB],
+        )
+      ).rows[0]
+    const remainingOfB = async () => {
+      await actAs(userB)
+      const r = (await db.query('select remaining, daily_limit from public.my_ai_remaining()')).rows[0]
+      await db.query('reset role')
+      return r
+    }
+    // B의 남은 횟수는 B의 권한(RLS)으로 읽는다. 역할 전환은 savepoint 없이 하고 바로 되돌린다(초기화가 savepoint 롤백으로 사라지지 않게).
+    const beforeCounts = await counts()
+    const beforeRemaining = await remainingOfB()
+    const actionsBefore = (await db.query('select count(*)::int as n from public.admin_actions')).rows[0].n
+
+    lockStartedAt = performance.now()
+    await actAs(userA)
+    await db.query('select public.admin_reset_ai_quota($1)', [userB])
+    await db.query('reset role')
+
+    const afterCounts = await counts()
+    const afterRemaining = await remainingOfB()
+    record(
+      '#25 초기화 후 B의 남은 횟수 복구',
+      beforeRemaining.remaining === beforeRemaining.daily_limit - usedRows && afterRemaining.remaining === afterRemaining.daily_limit,
+      `${beforeRemaining.remaining} → ${afterRemaining.remaining} / ${afterRemaining.daily_limit}`,
+    )
+    record(
+      '#25 초기화 후 B의 호출 기록·오늘 전체 건수 그대로',
+      afterCounts.b_rows === beforeCounts.b_rows && afterCounts.today_all === beforeCounts.today_all,
+      `기록 ${beforeCounts.b_rows}→${afterCounts.b_rows}, 전체 ${beforeCounts.today_all}→${afterCounts.today_all}`,
+    )
+    {
+      // 판정도 같은 규칙: 사용자 한도 = 초기화 전 사용량이면 원래 거부였지만 이제 통과 / 전체 한도 = 현재 전체 건수면 여전히 거부
+      const userOk = await inSavepoint(async () => (await db.query('select public.begin_ai_call($1, $2, 1000000000) as id', [userB, usedRows])).rows[0].id)
+      record('#25 초기화 후 사용자 한도 판정도 복구(begin_ai_call 통과)', !userOk.error && Boolean(userOk.value), userOk.error ? `${userOk.error.code} ${userOk.error.message}` : '통과')
+      const globalStill = await inSavepoint(async () => {
+        await db.query('select public.begin_ai_call($1, 1000000000, $2)', [userB, afterCounts.today_all])
+      })
+      const ok = Boolean(globalStill.error) && globalStill.error.message === 'AI_GLOBAL_LIMIT'
+      record('#25 전체 한도는 초기화와 무관(전체 한도 = 현재 건수면 AI_GLOBAL_LIMIT)', ok, globalStill.error ? globalStill.error.message : '거부되지 않음')
+    }
+    {
+      const { rows: acts } = await db.query(
+        `select actor_id, action, target_user_id, detail from public.admin_actions where actor_id = $1`,
+        [userA],
+      )
+      const total = (await db.query('select count(*)::int as n from public.admin_actions')).rows[0].n
+      const one = acts.length === 1 && acts[0].action === 'quota_reset' && acts[0].target_user_id === userB && acts[0].detail === null
+      record('#27 admin_actions: quota_reset 1건, actor = 관리자 A, target = B', one && total === actionsBefore + 1, `A의 기록 ${acts.length}건, 전체 ${actionsBefore}→${total}`)
+      record('#27 admin_actions: 이메일(@) 없음', !JSON.stringify(acts).includes('@'), '')
+      const reset = (await db.query('select reset_by from public.ai_quota_resets where user_id = $1', [userB])).rows
+      record('#25 ai_quota_resets: 1건, reset_by = 관리자 A', reset.length === 1 && reset[0].reset_by === userA, `${reset.length}건`)
+    }
+  }
 } catch (error) {
   record('실행 중 오류', false, redact(`${error.code ?? ''} ${error.message ?? error}`.trim()))
 } finally {
@@ -533,6 +607,7 @@ try {
     try {
       await db.query('rollback')
       rolledBack = true
+      if (lockStartedAt !== null) lockHeldMs = Math.round(performance.now() - lockStartedAt)
     } catch (error) {
       console.error('ROLLBACK 실패:', redact(error.message))
     }
@@ -543,7 +618,22 @@ try {
 let leftover = null
 if (rolledBack) {
   try {
-    const { rows } = await db.query('select count(*)::int as n from auth.users where email = any($1)', [emails])
+    // 임시 사용자, 트랜잭션 안에서 만든 관리자 지정·동작 기록·초기화·호출 기록이 하나도 남지 않았다
+    const { rows } = await db.query(
+      `select (select count(*)::int from auth.users where email = any($1))
+            + (select count(*)::int from public.ai_usage where user_id = any($2))
+            + coalesce((select count(*)::int from public.admins where user_id = any($2)), 0)
+            + coalesce((select count(*)::int from public.admin_actions where actor_id = any($2) or target_user_id = any($2)), 0)
+            + coalesce((select count(*)::int from public.ai_quota_resets where user_id = any($2)), 0) as n`,
+      [emails, [userA, userB]],
+    ).catch(async () =>
+      // 관리자 표가 없는 DB(C1 반영 전)
+      db.query(
+        `select (select count(*)::int from auth.users where email = any($1))
+              + (select count(*)::int from public.ai_usage where user_id = any($2)) as n`,
+        [emails, [userA, userB]],
+      ),
+    )
     leftover = rows[0].n
   } catch (error) {
     console.error('정리 확인 실패:', redact(error.message))
@@ -558,6 +648,9 @@ for (const r of results) {
 const failed = results.filter((r) => !r.ok).length
 console.log(`\n${results.length - failed}개 통과, ${failed}개 실패`)
 
+if (lockHeldMs !== null) {
+  console.log(`관리자 초기화의 전역 잠금 유지 시간: ${lockHeldMs} ms (이 동안 운영의 분석 요청은 기다린다)`)
+}
 if (rolledBack && leftover === 0) {
   console.log('ROLLBACK 완료, 운영 데이터 변경 없음')
 } else if (!connected) {

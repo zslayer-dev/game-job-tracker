@@ -127,7 +127,7 @@ npx supabase db advisors --type security          # 로컬 보안 점검
 | `tests/c1-admin.test.mjs` | 일반 사용자의 관리자 함수 거부·DB 불변, `admins` 자기 행만·자기 추가 불가, 초기화 후 사용자 횟수만 복구·전체 유지, 허용 목록 모드 AI 호출 전 거부, 동작 기록과 수정 불가, DEFINER 노출은 관리자 함수 4개뿐·첫 문장 관리자 확인 |
 | `tests/e2e/analysis.spec.mjs` | AI 분석 → 저장 → 새로고침 유지, 원문 수정 시 버튼 비활성, 오류 문구, 연타 1회, 결과를 텍스트로만 렌더링 (AI는 흉내 모드) |
 | `tests/e2e/admin.spec.mjs` | 관리자 화면: 일반 사용자 메뉴 없음·`/admin` 거부, 목록, 빈 허용 목록 경고, 허용 목록 모드 전환·차단 표시, 초기화, 기록 |
-| `tests/prod/cross-check.mjs` | 운영 DB에서 한 트랜잭션 안에 다른 계정 접근·로그아웃·상한·권한(Should 표·관리자 기능 포함)을 검사하고 ROLLBACK (`npm run test:prod`, 절차는 m7-checklist.md 6장). 운영 실행: 2026-11-04 18개(applications만) → S5 48개 통과. C3에서 관리자 검사를 더해 로컬 70개(운영은 71개 예상) |
+| `tests/prod/cross-check.mjs` | 운영 DB에서 한 트랜잭션 안에 다른 계정 접근·로그아웃·상한·권한(Should 표·관리자 기능 포함)을 검사하고 ROLLBACK (`npm run test:prod`, 절차는 m7-checklist.md 6장). 운영 실행: 2026-11-04 18개(applications만) → S5 48개 통과. C3에서 관리자 검사(#24, 초기화 #25, 동작 기록 #27)를 더해 로컬 77개(운영은 78개 예상) |
 
 배포 주소에서의 검증 절차는 [docs/m7-checklist.md](docs/m7-checklist.md)(Must), [docs/s5-checklist.md](docs/s5-checklist.md)(Should), [docs/c3-checklist.md](docs/c3-checklist.md)(Could 관리자), 결과는 [PRD.md](PRD.md) 10장에 기록합니다.
 
