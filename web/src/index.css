@@ -445,3 +445,86 @@ table.list td:nth-child(2) {
   color: var(--error);
   font-size: 0.9em;
 }
+
+/* AI 공고 분석 (상세 화면) */
+.analysis {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 720px;
+  margin-top: 32px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.analysis h2,
+.analysis h3 {
+  margin: 0;
+}
+
+.analysis h3 {
+  font-size: 1em;
+}
+
+.analysis-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.remaining,
+.muted {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.analysis-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.analysis-result.new {
+  border-color: var(--accent);
+}
+
+.analysis-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.analysis-view .score {
+  margin: 0;
+}
+
+.analysis-view .score strong {
+  font-size: 1.4em;
+}
+
+.skill-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.skill-list .label {
+  min-width: 5em;
+  font-weight: 600;
+}
+
+.tag.plain {
+  padding: 2px 10px;
+}
+
+.analysis-view .comment {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

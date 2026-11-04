@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
+import { AnalysisPanel } from '../components/AnalysisPanel'
 import { ApplicationForm } from '../components/ApplicationForm'
 import { deleteApplication, getApplication, updateApplication, type Application, type ApplicationInput } from '../lib/applications'
 import { errorMessage, type AppError } from '../lib/errors'
@@ -16,6 +17,8 @@ export function ApplicationDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const deletingRef = useRef(false)
   const [deleteError, setDeleteError] = useState<AppError | null>(null)
+  // 화면에 입력 중인 공고 원문. 저장된 값과 다르면 AI 분석을 막는다(#23)
+  const [draftPosting, setDraftPosting] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -34,6 +37,7 @@ export function ApplicationDetailPage() {
     const { data, error } = await updateApplication(id, input)
     if (error) return error
     setApp(data)
+    setDraftPosting(null)
     setSaved(true)
     return null
   }
@@ -86,7 +90,17 @@ export function ApplicationDetailPage() {
             </p>
           )}
           {/* 저장 후 서버 값으로 폼을 다시 채우도록 updated_at을 key로 쓴다 */}
-          <ApplicationForm key={app.updated_at} initial={app} submitLabel="저장" onSubmit={handleSubmit} />
+          <ApplicationForm
+            key={app.updated_at}
+            initial={app}
+            submitLabel="저장"
+            onSubmit={handleSubmit}
+            onPostingTextChange={setDraftPosting}
+          />
+          <AnalysisPanel
+            applicationId={app.id}
+            postingDirty={draftPosting !== null && draftPosting !== (app.posting_text ?? '')}
+          />
         </>
       )}
     </>

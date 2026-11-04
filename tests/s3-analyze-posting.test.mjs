@@ -54,10 +54,8 @@ async function serve(mode) {
       '',
     ].join('\n'),
   )
-  server = spawn('npx', ['supabase', 'functions', 'serve', '--env-file', file], {
-    shell: process.platform === 'win32',
-    detached: process.platform !== 'win32',
-  })
+  // 셸 명령 한 줄로 넘긴다(경로는 tmpdir 아래 우리가 만든 것). 인자 배열 + shell은 Node가 경고한다(DEP0190).
+  server = spawn(`npx supabase functions serve --env-file "${file}"`, { shell: true, detached: process.platform !== 'win32' })
   let ready = false
   const onData = (chunk) => {
     const text = chunk.toString()

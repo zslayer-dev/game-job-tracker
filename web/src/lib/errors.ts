@@ -7,6 +7,14 @@ export type ErrorCode =
   | 'VALIDATION'
   | 'APP_LIMIT'
   | 'SAMPLE_NOT_EMPTY'
+  | 'POSTING_EMPTY'
+  | 'POSTING_TOO_LONG'
+  | 'PROFILE_EMPTY'
+  | 'AI_USER_LIMIT'
+  | 'AI_GLOBAL_LIMIT'
+  | 'AI_ERROR'
+  | 'AI_TIMEOUT'
+  | 'AI_FORMAT'
   | 'INTERNAL'
 
 // VALIDATION은 어느 필드인지(제약 이름에서 알아냄)에 따라 문구를 고른다
@@ -31,6 +39,15 @@ const MESSAGES: Record<ErrorCode, string> = {
   VALIDATION: '입력값을 확인해 주세요.',
   APP_LIMIT: '지원 건은 최대 500건까지 저장할 수 있습니다.',
   SAMPLE_NOT_EMPTY: '이미 지원 건이 있어 샘플을 넣을 수 없습니다.',
+  // AI 분석 (PRD 8장 문구, design.md 7.8)
+  POSTING_EMPTY: '공고 원문을 입력하고 저장한 뒤 분석해 주세요.',
+  POSTING_TOO_LONG: '공고 원문은 8,000자 이하로 줄여 주세요.',
+  PROFILE_EMPTY: '먼저 경력 프로필을 입력해 주세요.',
+  AI_USER_LIMIT: '오늘 분석 횟수를 모두 사용했습니다. 내일 다시 시도해 주세요.',
+  AI_GLOBAL_LIMIT: '오늘 서비스 전체 분석 한도가 소진되었습니다.',
+  AI_ERROR: '분석에 실패했습니다. 횟수는 차감되지 않았습니다.',
+  AI_TIMEOUT: '분석 시간이 초과되었습니다. 횟수는 차감되지 않았습니다.',
+  AI_FORMAT: '분석 결과 형식이 올바르지 않아 표시하지 않았습니다.',
   INTERNAL: '잠시 후 다시 시도해 주세요.',
 }
 

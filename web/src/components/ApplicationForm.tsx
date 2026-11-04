@@ -18,6 +18,8 @@ type Props = {
   submitLabel: string
   // 저장 결과의 오류를 돌려주면 폼이 문구로 보여준다
   onSubmit: (input: ApplicationInput) => Promise<AppError | null>
+  // 공고 원문 칸이 바뀔 때마다 알린다(상세 화면이 저장 안 된 변경을 판단해 AI 분석 버튼을 막는다)
+  onPostingTextChange?: (value: string) => void
 }
 
 type FormState = {
@@ -67,7 +69,7 @@ export function Counter({ value, max }: { value: string; max: number }) {
   )
 }
 
-export function ApplicationForm({ initial, submitLabel, onSubmit }: Props) {
+export function ApplicationForm({ initial, submitLabel, onSubmit, onPostingTextChange }: Props) {
   const [form, setForm] = useState<FormState>(() => toFormState(initial))
   const [error, setError] = useState<AppError | null>(null)
   const [saving, setSaving] = useState(false)
@@ -75,6 +77,7 @@ export function ApplicationForm({ initial, submitLabel, onSubmit }: Props) {
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }))
+    if (key === 'posting_text') onPostingTextChange?.(value as string)
   }
 
   async function handleSubmit(e: FormEvent) {

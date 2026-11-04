@@ -4,6 +4,8 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   testDir: 'tests/e2e',
   testMatch: '**/*.spec.mjs',
+  // 함수 서버(analyze-posting)를 AI_MOCK=ok로 띄우고 끝나면 내린다
+  globalSetup: './tests/e2e/global-setup.mjs',
   // 테스트 사용자를 공유하므로 한 줄로 실행한다
   workers: 1,
   fullyParallel: false,
