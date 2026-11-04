@@ -59,6 +59,8 @@ npm run dev --prefix web
 - 빌드·린트 확인: `npm run build --prefix web`, `npm run lint --prefix web`
 - 마이그레이션 로컬 적용: `npx supabase migration up` (기본 대상이 로컬). **운영 반영(`db push`, `--remote`)은 승인받은 뒤에만.**
 - DB 테스트(로컬 스택 전용, 테스트 사용자를 만들고 끝나면 지운다): `npm run test:db`
+- 화면 E2E(로컬 스택 + 개발 서버, Playwright·Windows 기본 Edge 사용, 테스트 사용자를 만들고 끝나면 지운다): `npm run test:e2e`
+- 운영 DB 롤백 검사(`npm run test:prod`): 한 트랜잭션에서 검사 후 반드시 ROLLBACK. 접속 문자열은 `PROD_DB_URL` 환경 변수로만 받는다. **사용자가 직접 실행한다.** 절차는 docs/m7-checklist.md 6장
 - 보안 점검(로컬): `npx supabase db advisors --type security`
 - 포트 5173은 Supabase Redirect URLs·Edge Function CORS에 정확히 등록된 주소라 바꾸지 않는다(`web/vite.config.ts`의 `strictPort`).
 - 로컬 Auth 설정(`supabase/config.toml`): `site_url`·`additional_redirect_urls` = `http://localhost:5173`, 이메일 공급자 켬(로컬 테스트 전용), 구글 공급자 켬(`supabase\.env`의 값 사용).

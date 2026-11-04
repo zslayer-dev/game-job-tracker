@@ -189,3 +189,61 @@ delete from public.applications where user_id in ('A의-사용자-ID', 'B의-사
 #1 통과 / #2 통과 / ... / #5 통과 / #6 통과 / #20 통과(경고 0, Leaked Password 예외) / #22 통과(memo 400)
 실패가 있으면: #번호 — 실제로 본 상태 코드·본문 또는 화면
 ```
+
+---
+
+## 6. 자동화된 교차 검증
+
+### 6-1. 로컬 화면 E2E (`npm run test:e2e`)
+
+로컬 스택 + 로컬 개발 서버에서 Playwright로 실제 화면을 조작한다(브라우저는 Windows 기본 Edge). 임시 사용자 A·B·C를 만들어 세션을 주입하고, 끝나면 지운다. `web\.env.local`이 로컬 스택을 가리키지 않으면 실행을 거부한다. 개발 서버가 꺼져 있으면 자동으로 띄운다.
+
+| 검사 | PRD |
+|---|---|
+| A: 추가 → 목록에 보임 → 새로고침 후 유지 → 상태 면접·관심 변경이 새로고침 후 유지 | #1, #2 |
+| B: 목록에 A의 건 없음, A의 상세 주소 → "지원 건을 찾을 수 없습니다.", 폼·삭제 버튼 없음, B 토큰으로 직접 수정·삭제해도 0건 | #5 |
+| 로그아웃 상태: `/`, `/applications/new`, 상세 주소 → 로그인 화면, 지원 데이터 요청 0건 | #6 |
+| 빈 계정 C: 샘플 버튼을 다시 그려지기 전에 5번 클릭 → 요청 1번, 오류 없음, 6건 | #8 |
+
+```powershell
+npx supabase start
+npm run test:e2e
+```
+
+### 6-2. 운영 DB 롤백 검사 (`npm run test:prod`)
+
+`tests/prod/cross-check.mjs`가 운영 DB에 직접 접속해 **하나의 트랜잭션 안에서** 검사하고 마지막에 반드시 `ROLLBACK` 한다(중간에 실패해도 ROLLBACK). 운영 데이터는 바뀌지 않는다.
+
+- 트랜잭션 안에서 임시 사용자 A·B(`prodcheck-…@example.invalid`)와 A의 지원 건을 만들고, `set local role authenticated` + `request.jwt.claims`로 B를 흉내 낸다(PostgREST가 요청마다 하는 것과 같음).
+- 검사: #5(B의 조회·수정·삭제 0건, A 소유로 추가 거부, 소유자 변경 거부, A의 건 그대로), #6(anon 조회·추가 42501), #22(memo 5,001자·posting_text 8,001자 거부, 5,000자는 저장), 권한(authenticated 4개만, anon·PUBLIC 없음, RLS 켜짐, 함수 search_path 비어 있음, seed_sample_data·rls_auto_enable 실행 권한).
+- 끝에 항목별 통과/실패와 `ROLLBACK 완료, 운영 데이터 변경 없음`을 출력한다. 이 문구는 ROLLBACK 후 트랜잭션 밖에서 임시 사용자가 0명인 것까지 확인했을 때만 나온다.
+- 접속 문자열과 비밀번호는 출력하지 않는다(오류 문구에서도 지움). 실패가 있으면 종료 코드 1.
+- 로컬 DB를 대상으로 미리 실행해 17개 통과를 확인했다. 로컬에서 RLS를 끄고 anon에 SELECT를 준 상태로 돌리면 8개가 실패해 검사가 문제를 잡는 것도 확인했다. 운영의 `postgres` 역할은 로컬과 달리 슈퍼유저가 아니므로, 처음 실행에서 `실행 중 오류 42501`(예: auth.users 추가 권한)이 나오면 그 출력을 알려 준다.
+
+**준비 (한 번)**
+
+1. Supabase 대시보드 → 상단 **Connect** → **Session pooler** 접속 문자열을 확인한다(`[YOUR-PASSWORD]` 자리가 있는 형태). Direct connection은 IPv6 전용이라 쓰지 않는다.
+2. 대시보드 → Project Settings → Database → **SSL Configuration → Download certificate**로 인증서를 받는다. 저장소 밖(예: `$HOME\Downloads`)에 둔다. 스크립트는 운영 접속 시 이 인증서로 서버를 검증한다.
+3. DB 비밀번호를 모르면 같은 Database 설정에서 재설정한다.
+
+**실행 (값이 PowerShell 기록에 남지 않게)**
+
+`Read-Host`로 입력한 값은 PSReadLine 기록 파일에 저장되지 않는다. 비밀번호는 `-AsSecureString`으로 받아 화면에도 보이지 않게 한다.
+
+```powershell
+$tpl = Read-Host '접속 문자열 ([YOUR-PASSWORD]는 그대로 둔 채 붙여 넣기)'
+$pw  = Read-Host 'DB 비밀번호' -AsSecureString
+$env:PROD_DB_URL = $tpl.Replace('[YOUR-PASSWORD]', [uri]::EscapeDataString([Net.NetworkCredential]::new('', $pw).Password))
+Remove-Variable tpl, pw
+$env:PROD_DB_CA = "$HOME\Downloads\prod-ca-2021.crt"   # 받은 인증서 파일 이름에 맞춘다
+
+npm run test:prod
+```
+
+**끝난 뒤 정리**
+
+```powershell
+Remove-Item Env:PROD_DB_URL, Env:PROD_DB_CA -ErrorAction SilentlyContinue
+```
+
+환경 변수는 이 PowerShell 창에만 있으므로 창을 닫아도 사라진다. `$env:PROD_DB_URL`을 단독으로 입력해 값을 화면에 출력하지 않는다.

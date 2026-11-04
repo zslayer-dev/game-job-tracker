@@ -14,3 +14,7 @@ dist/
 
 # Claude Code 개인 설정
 .claude/settings.local.json
+
+# Playwright 실행 결과
+test-results/
+playwright-report/
